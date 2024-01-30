@@ -1,0 +1,42 @@
+{% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0.dev').lstrip('v') %}
+{% set describe_number = environ.get('GIT_DESCRIBE_NUMBER', '0') %}
+{% set describe_hash = environ.get('GIT_DESCRIBE_HASH', 'untagged') %}
+{% set py_version = environ['CONDA_PY'] %}
+
+package:
+  name: usask_arg_example
+  version: {{ version }}
+
+source:
+  git_url: ../
+
+build:
+  noarch: python
+  number: {{ describe_number }}
+  string: {{ describe_hash }}_{{ describe_number }}
+  script:
+    - {{ PYTHON }} -m pip install . --no-deps -vvv
+
+requirements:
+  host:
+    - python {{ python }}
+    - pip
+    - setuptools-scm
+  run:
+    - python {{ python }}
+    - numpy
+
+test:
+  imports:
+    - usask_arg_example
+  requires:
+    - pytest
+  source_files:
+    - tests
+  commands:
+    - pytest tests
+
+about:
+  home: HOME_PAGE_URL
+  summary: SUMMARY
+  license_file: ../LICENSE
