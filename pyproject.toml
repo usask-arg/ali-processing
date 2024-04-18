@@ -3,13 +3,13 @@ requires = ["setuptools>64", "wheel", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "usask_arg_example"
+name = "ali_processing"
 dynamic = ["version"]
-description="usask arg example project"
+description="Aerosol Limb Imager processing code"
 readme = "README.md"
 dependencies = ['numpy']
 authors = [
-    { name = "AUTHOR", email = "AUTHOR@EXAMPLE.com" },
+    { name = "Landon Rieger", email = "landon.rieger@usask.ca" },
 ]
 requires-python = ">=3.10"
 classifiers = [
@@ -22,6 +22,7 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+plot = ["matplotlib"]
 
 [tool.setuptools_scm]
 write_to = "src/_version.py"
@@ -65,12 +66,14 @@ extend-ignore = [
     "PLR",    # Design related pylint codes
     "E501",   # Line too long
 ]
+exclude=["src/ali_processing/legacy*", "src/_version.py"]
 src = ["src"]
 unfixable = [
     "T20",  # Removes print statements
     "F841", # Removes unused variables
     "F401", # Removes unused imports
 ]
+ignore = ["PD013"]
 flake8-unused-arguments.ignore-variadic-names = true
 isort.required-imports = ["from __future__ import annotations"]
 

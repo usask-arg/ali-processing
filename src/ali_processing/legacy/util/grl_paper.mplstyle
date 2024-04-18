@@ -1,0 +1,64 @@
+patch.linewidth: 0.5
+patch.facecolor: 348ABD  # blue
+patch.edgecolor: EEEEEE
+patch.antialiased: True
+
+pdf.fonttype: 42
+
+font.size: 8
+text.color : 333333
+xtick.labelsize : medium
+ytick.labelsize : medium
+axes.labelsize : medium
+axes.titlesize : medium
+axes.titleweight: bold
+axes.titlelocation: left
+axes.titlecolor : 666666
+axes.titlepad : 2
+figure.titlesize : medium
+figure.titleweight: 300
+
+figure.figsize   : 3.74, 4.53
+figure.dpi       : 100
+
+#text.usetex : True
+# text.latex.preamble : \usepackage{sansmath}, \sansmath
+
+mathtext.fontset: custom
+mathtext.sf: roboto
+font.family: sans-serif
+font.sans-serif: roboto
+font.weight: 300
+axes.labelweight: 300
+axes.facecolor: fbfbfb
+axes.edgecolor: BBBBBB
+axes.linewidth: 0.4
+axes.grid: True
+axes.labelcolor: 333333
+axes.axisbelow: True       # grid/ticks are below elements (e.g., lines, text)
+
+xtick.color: 333333
+xtick.direction: in
+xtick.major.width: 0.4
+xtick.major.size: 0
+
+ytick.color: 333333
+ytick.direction: in
+ytick.major.width: 0.4
+ytick.major.size: 0
+
+grid.color: BBBBBB
+grid.linewidth: 0.3
+grid.linestyle: -    # solid line
+
+lines.linewidth: 0.75
+lines.antialiased: True
+
+figure.facecolor: white
+figure.edgecolor: 0.50
+
+legend.framealpha:    1      # legend patch transparency
+legend.facecolor:     inherit  # inherit from axes.facecolor; or color spec
+legend.edgecolor:     none      # background patch boundary color
+legend.fontsize:      small
+legend.title_fontsize: small    # None sets to the same as the default axes.
