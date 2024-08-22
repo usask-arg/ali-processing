@@ -12,7 +12,7 @@ from matplotlib import ticker
 from skretrieval.core import OpticalGeometry
 from skretrieval.core.lineshape import DeltaFunction, Gaussian, Rectangle
 from skretrieval.core.radianceformat import RadianceSpectralImage
-from skretrieval.core.sensor.spectrograph import SpectrographFast
+from skretrieval.legacy.core.sensor.spectrograph import Spectrograph
 from skretrieval.retrieval.rodgers import Rodgers
 from skretrieval.retrieval.statevector import StateVector
 
@@ -1454,12 +1454,12 @@ class OMPSExtinctionRetrieval(ExtinctionRetrieval):
         self.orbit = orbit
         self.hires_geometry = None
 
-    def retrieval_sensors(self) -> list[SpectrographFast]:
+    def retrieval_sensors(self) -> list[Spectrograph]:
         """
         ALI sensor models used for the retrieval.
         """
         sensors = [
-            SpectrographFast(
+            Spectrograph(
                 wavelength_nm=[745.0],
                 pixel_shape=DeltaFunction(),
                 vert_fov=Rectangle(0.0003),

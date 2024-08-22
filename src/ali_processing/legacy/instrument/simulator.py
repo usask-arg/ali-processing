@@ -10,11 +10,12 @@ import xarray as xr
 from sasktran import Atmosphere, SolarSpectrum
 from skretrieval.core import OpticalGeometry
 from skretrieval.core.radianceformat import RadianceGridded, RadianceSpectralImage
-from skretrieval.core.sensor.imager import SpectralImager
-from skretrieval.core.sensor.spectrograph import SpectrographFast
+
+# from skretrieval.legacy.core.sensor.imager import SpectralImager
+from skretrieval.legacy.core.sensor.spectrograph import Spectrograph
 from skretrieval.retrieval import ForwardModel
-from skretrieval.tomography.grids import OrbitalPlaneGrid
-from skretrieval.tomography.sasktran_ext.engine import EngineHRTwoDim
+from skretrieval.legacy.tomography.grids import OrbitalPlaneGrid
+from skretrieval.legacy.tomography.sasktran_ext.engine import EngineHRTwoDim
 
 from ali_processing.legacy.instrument.sensor import ALISensor
 from ali_processing.legacy.instrument.sensor_2channel import ALISensorDualChannel
@@ -47,9 +48,9 @@ class ImagingSimulator(ForwardModel):
     --------
 
     >>> import sasktran as sk
-    >>> from ali.instrument.sensor import ALISensor
-    >>> from ali.instrument.simulator import ImagingSimulator
-    >>> from ali.util.geometry import optical_axis_from_geometry
+    >>> from ali_processing.legacy.instrument.sensor import ALISensor
+    >>> from ali_processing.legacy.instrument.simulator import ImagingSimulator
+    >>> from ali_processing.legacy.util.geometry import optical_axis_from_geometry
     >>> import numpy as np
     >>> ali = ALISensor(np.array([750.0]))
     >>> geometry = sk.VerticalImage()
@@ -472,7 +473,7 @@ class OMPSImagingSimulator(ForwardModel):
 
     def __init__(
         self,
-        sensors: list[SpectrographFast],
+        sensors: list[Spectrograph],
         optical_axis: list[OpticalGeometry],
         atmosphere: Atmosphere,
         options: dict = None,

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 from copy import copy
-
+from typing import List, Union
 import numpy as np
 import xarray as xr
-from sasktran import Geometry, StokesVector
+from sasktran import Geometry, StokesVector, LineOfSight
 from skretrieval.core import OpticalGeometry
 from skretrieval.core.lineshape import LineShape
 from skretrieval.core.radianceformat import (
@@ -13,7 +13,7 @@ from skretrieval.core.radianceformat import (
     RadianceRaw,
     RadianceSpectralImage,
 )
-from skretrieval.core.sensor.imager import SpectralImager
+from skretrieval.legacy.core.sensor.imager import SpectralImager
 
 
 class ALISpectralImage(RadianceSpectralImage):

@@ -5,7 +5,7 @@ from copy import copy
 import numpy as np
 import sasktran as sk
 import xarray as xr
-from skretrieval.retrieval.statevector.profile import StateVectorProfileLogND
+from skretrieval.legacy.retrieval.statevector.profile import StateVectorProfileLogND
 from skretrieval.retrieval.tikhonov import two_dim_vertical_second_deriv
 
 
@@ -85,6 +85,7 @@ class StateVectorAerosolProfile(StateVectorProfileLogND):
         self._upper_scale_alts = None
         self._lower_scale_alts = None
         self._compute_apriori_covariance()
+        self._enabled = True
 
     @property
     def initial_state(self):

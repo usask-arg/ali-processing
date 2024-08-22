@@ -8,7 +8,7 @@ from sasktran import Geometry
 from skretrieval.core.lineshape import DeltaFunction, Gaussian, LineShape, Rectangle
 from skretrieval.core.radianceformat import RadianceSpectralImage
 from skretrieval.core.sensor import OpticalGeometry
-from skretrieval.core.sensor.imager import SpectralImager
+from skretrieval.legacy.core.sensor.imager import SpectralImager
 
 from ali_processing.legacy.instrument.sensor import ALISensor
 

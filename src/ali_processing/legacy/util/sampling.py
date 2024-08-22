@@ -6,7 +6,7 @@ import numpy as np
 import sasktran as sk
 import xarray as xr
 from skretrieval.core import OpticalGeometry
-from skretrieval.core.sensor.imager import SpectralImager
+from skretrieval.legacy.core.sensor.imager import SpectralImager
 from skretrieval.util import rotation_matrix
 
 
