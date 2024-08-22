@@ -19,16 +19,20 @@ build:
 
 requirements:
   host:
-    - python {{ python }}
+    - python
     - pip
     - setuptools-scm
   run:
-    - python {{ python }}
+    - python
     - numpy
+    - netcdf4
+    - sasktran2
+    - skretrieval
+    - xarray
 
 test:
   imports:
-    - usask_arg_example
+    - ali_processing
   requires:
     - pytest
   source_files:
@@ -37,6 +41,6 @@ test:
     - pytest tests
 
 about:
-  home: HOME_PAGE_URL
-  summary: SUMMARY
+  home: https://github.com/usask-arg/ali-processing
+  summary: Research and development libraries for the ALI instrument
   license_file: ../LICENSE
