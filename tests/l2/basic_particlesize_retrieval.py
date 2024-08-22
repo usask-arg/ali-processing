@@ -26,7 +26,7 @@ def basic_medianradius_retrieval(alts=(22.5,), mjd=54372, test_file: str | None 
     atmo_sim["ozone"] = sk.Species(sk.O3DBM(), sk.Labow())
     altitudes = np.arange(0.0, 45001.0, 200)  # retrieval altitudes
 
-    aerosol = np.loadtxt("aerosol_apriori.txt")
+    aerosol = np.loadtxt(Config.AEROSOL_APRIORI_FILE)
     aerosol = np.interp(altitudes, aerosol[:, 0], aerosol[:, 1])
     radius = np.array([0.08, 0.08, 0.14, 0.08, 0.08])
     radius_alts = np.array([0.0, 15.0, 20.0, 25.0, 100.0]) * 1000

@@ -52,7 +52,7 @@ def basic_extinction_retrieval(alts=(22.5,), mjd=54372, test_file: str | None = 
 
     # ------------------------------ SENSORS ----------------------------- #
     # Create the ALI sensors
-    sensor_wavel = np.array([750.0, 1550.0])
+    sensor_wavel = np.array([750.0, 1020.0, 1550.0])
     sensors = []
     opt_geom = []
     for wavel in sensor_wavel:
@@ -77,7 +77,7 @@ def basic_extinction_retrieval(alts=(22.5,), mjd=54372, test_file: str | None = 
     measurement_l1 = simulator.calculate_radiance()
 
     retrieval = ExtinctionRetrieval(sensors, opt_geom, measurement_l1)
-    retrieval.aerosol_vector_wavelength = [750.0]
+    retrieval.aerosol_vector_wavelength = [750.0, 1020.0, 1550.0]
     retrieval.max_iterations = 5
     retrieval.vertical_samples = 512
     if test_file is None:

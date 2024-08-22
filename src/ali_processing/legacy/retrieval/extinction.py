@@ -927,6 +927,10 @@ class ExtinctionRetrieval:
         ax : plt.Axes or array of plt.Axes
             Axes used for plotting
         """
+
+        if isinstance(extinction_wavelength, (float, int)):
+            extinction_wavelength = [extinction_wavelength]
+
         try:
             true_state = xr.open_dataset(output_filename, group="true/aerosol")
         except (KeyError, OSError) as e:
@@ -964,7 +968,7 @@ class ExtinctionRetrieval:
             aerosol_iterations = np.exp(aerosol_iterations)
         aerosol_iterations *= aer_xsec.interp(ret_alt=aerosol_iterations.ret_alt.values)
         aerosol_initial *= aer_xsec.interp(ret_alt=aerosol_iterations.ret_alt.values)
-        aerosol_final = ret_data.extinction.sel(wavelength=extinction_wavelength)
+        # aerosol_final = ret_data.extinction.sel(wavelength=extinction_wavelength)
 
         true_color = "#c2452f"
         ret_color = "#2177b5"
@@ -998,25 +1002,27 @@ class ExtinctionRetrieval:
         )
 
         if true_state is not None:
-            (l1,) = ax[0].plot(
-                true_state.extinction.sel(wavelength=extinction_wavelength)
-                * aerosol_scale,
-                true_state.altitude / 1000,
-                color=true_color,
-                lw=1,
-                zorder=11,
-            )
-            if (ice_cloud is not None) and plot_cloud:
-                ax[0].fill_betweenx(
-                    ice_cloud.altitude / 1000,
-                    ice_cloud.extinction.sel(wavelength=extinction_wavelength)
+            for wavel in extinction_wavelength:
+                (l1,) = ax[0].plot(
+                    true_state.extinction.sel(wavelength=wavel, method="nearest")
                     * aerosol_scale,
-                    ice_cloud.extinction.sel(wavelength=extinction_wavelength) * 0,
-                    color="#444444",
-                    lw=0,
-                    alpha=0.1,
-                    zorder=0,
+                    true_state.altitude / 1000,
+                    color=true_color,
+                    lw=1,
+                    zorder=11,
                 )
+                if (ice_cloud is not None) and plot_cloud:
+                    ax[0].fill_betweenx(
+                        ice_cloud.altitude / 1000,
+                        ice_cloud.extinction.sel(wavelength=wavel, method="nearest")
+                        * aerosol_scale,
+                        ice_cloud.extinction.sel(wavelength=wavel, method="nearest")
+                        * 0,
+                        color="#444444",
+                        lw=0,
+                        alpha=0.1,
+                        zorder=0,
+                    )
 
         for i in range(1, len(ret_info.iteration)):
             (l2,) = ax[0].plot(
@@ -1027,12 +1033,14 @@ class ExtinctionRetrieval:
                 lw=0.5,
                 zorder=9,
             )
-        (l3,) = ax[0].plot(
-            aerosol_final.values * aerosol_scale,
-            aerosol_final.altitude.values / 1000,
-            color=ret_color,
-            zorder=15,
-        )
+        for wavel in extinction_wavelength:
+            aerosol_final = ret_data.extinction.sel(wavelength=wavel, method="nearest")
+            (l3,) = ax[0].plot(
+                aerosol_final.values * aerosol_scale,
+                aerosol_final.altitude.values / 1000,
+                color=ret_color,
+                zorder=15,
+            )
 
         if plot_error:
             Se = np.diag(
