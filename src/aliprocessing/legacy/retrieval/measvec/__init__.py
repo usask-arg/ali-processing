@@ -51,7 +51,7 @@ class MeasurementVectorElement:
     def name(self):
         return self._name
 
-    def add_transform(self, transform: Transformer, index: Union[int, str] = "post"):
+    def add_transform(self, transform: Transformer, index: int | str = "post"):
         """
         Add a transform to the measurment vector element.
 
@@ -98,7 +98,7 @@ class MeasurementVectorElement:
         return l1_data
 
     def meas_dict(
-        self, l1_data: Union[list[RadianceBase], RadianceBase], covariance: bool = False
+        self, l1_data: list[RadianceBase] | RadianceBase, covariance: bool = False
     ) -> dict[str, np.ndarray]:
         """
         Transform the level 1 data into measurement vector space and return the measurement vector, error and weighting
@@ -171,7 +171,7 @@ class MeasurementVector:
                 meas_dict[key] = np.vstack([m[key] for m in md])
 
         if self._drop_zero_error:
-            if "y_error" in meas_dict.keys():
+            if "y_error" in meas_dict:
                 if np.nansum(meas_dict["y_error"]) == 0.0:
                     del meas_dict["y_error"]
 

@@ -1,5 +1,7 @@
-import sasktran as sk
+from __future__ import annotations
+
 import numpy as np
+import sasktran as sk
 
 rg = 0.08
 sg = 1.6

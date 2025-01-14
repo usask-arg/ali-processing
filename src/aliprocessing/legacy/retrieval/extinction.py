@@ -8,14 +8,6 @@ import numpy as np
 import pandas as pd
 import sasktran as sk
 import xarray as xr
-from matplotlib import ticker
-from skretrieval.core import OpticalGeometry
-from skretrieval.core.lineshape import DeltaFunction, Gaussian, Rectangle
-from skretrieval.core.radianceformat import RadianceSpectralImage
-from skretrieval.legacy.core.sensor.spectrograph import Spectrograph
-from skretrieval.retrieval.rodgers import Rodgers
-from skretrieval.retrieval.statevector import StateVector
-
 from ali_processing.legacy.instrument.sensor_2channel import ALISensorDualChannel
 from ali_processing.legacy.instrument.simulator import (
     ImagingSimulator,
@@ -52,6 +44,13 @@ from ali_processing.legacy.util.atmospheres import (
 )
 from ali_processing.legacy.util.config import Config
 from ali_processing.legacy.util.rt_options import retrieval_rt_opts
+from matplotlib import ticker
+from skretrieval.core import OpticalGeometry
+from skretrieval.core.lineshape import DeltaFunction, Gaussian, Rectangle
+from skretrieval.core.radianceformat import RadianceSpectralImage
+from skretrieval.legacy.core.sensor.spectrograph import Spectrograph
+from skretrieval.retrieval.rodgers import Rodgers
+from skretrieval.retrieval.statevector import StateVector
 
 plt.style.use(Config.MATPLOTLIB_STYLE_FILE)
 
@@ -232,7 +231,7 @@ class ExtinctionRetrieval:
         return self._aerosol_vector_wavelength
 
     @aerosol_vector_wavelength.setter
-    def aerosol_vector_wavelength(self, value: Union[float, list[float]]):
+    def aerosol_vector_wavelength(self, value: float | list[float]):
         if not hasattr(value, "__len__"):
             value = [value]
         self._aerosol_vector_wavelength = value
@@ -889,7 +888,7 @@ class ExtinctionRetrieval:
         plot_error: bool = True,
         plot_meas_vec: bool = True,
         plot_averaging_kernel: bool = True,
-        aerosol_scale: Union[int, float] = 1000,
+        aerosol_scale: int | float = 1000,
         plot_cloud: bool = True,
         figize: tuple[float, float] = None,
         kernel_kwargs: dict = {},
@@ -1280,7 +1279,7 @@ class ExtinctionRetrieval:
         output_filename,
         state,
         ax: plt.Axes = None,
-        vectors: Union[list, int] = None,
+        vectors: list | int = None,
         measurement_alts: np.ndarray = np.array([10, 15, 20, 25, 30, 35]),
     ):
         ret_info = xr.open_dataset(output_filename, group="retrieval/state")
@@ -1315,7 +1314,7 @@ class ExtinctionRetrieval:
         plot_averaging_kernel: bool = True,
         plot_effective_radius: bool = True,
         plot_backscatter: bool = False,
-        aerosol_scale: Union[int, float] = 1000,
+        aerosol_scale: int | float = 1000,
         fig: plt.Figure = None,
         axs: list[plt.axes] = None,
         plot_cloud: bool = True,

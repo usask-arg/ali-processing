@@ -4,17 +4,6 @@ import logging
 
 import numpy as np
 import xarray as xr
-from sasktran import Geometry, LineOfSight
-from skcomponents.optics import AOTF, CompositeComponent, IdealLCR, LinearPolarizer
-from skcomponents.processing import PhotonIntegration
-from skretrieval.core.lineshape import (
-    Gaussian,
-    LineShape,
-    Rectangle,
-)
-from skretrieval.core.sensor import OpticalGeometry
-from skretrieval.util import rotation_matrix
-
 from ali_processing.legacy.instrument.aotf import (
     ER2AOTF,
     Brimrose20mmAOTF,
@@ -38,6 +27,16 @@ from ali_processing.legacy.instrument.spectralimager import (
     ALISpectralImage,
     SpectralImagerFast,
 )
+from sasktran import Geometry, LineOfSight
+from skcomponents.optics import AOTF, CompositeComponent, IdealLCR, LinearPolarizer
+from skcomponents.processing import PhotonIntegration
+from skretrieval.core.lineshape import (
+    Gaussian,
+    LineShape,
+    Rectangle,
+)
+from skretrieval.core.sensor import OpticalGeometry
+from skretrieval.util import rotation_matrix
 
 
 class ALISensor(SpectralImagerFast):

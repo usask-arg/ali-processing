@@ -21,18 +21,17 @@ from ali_processing.legacy.retrieval.statevector import (
     StateVectorProfileEffectiveRadius,
     StateVectorProfileParticleSize,
 )
-
+from ali_processing.legacy.util.analysis import (
+    decode_to_multiindex,
+    encode_multiindex,
+    resolution_from_averaging_kernel,
+)
 from ali_processing.legacy.util.atmospheres import (
     aerosol_cross_section,
     apriori_profile,
     backscatter_to_extinction_ratio,
     particle_size,
     retrieval_atmo,
-)
-from ali_processing.legacy.util.analysis import (
-    decode_to_multiindex,
-    encode_multiindex,
-    resolution_from_averaging_kernel,
 )
 from ali_processing.legacy.util.config import Config
 from skretrieval.retrieval.rodgers import Rodgers
@@ -66,7 +65,7 @@ class LognormalRadiusRetrieval(ExtinctionRetrieval):
         return self._particle_size_vector_wavelength
 
     @particle_size_vector_wavelength.setter
-    def particle_size_vector_wavelength(self, value: Union[float, list[float]]):
+    def particle_size_vector_wavelength(self, value: float | list[float]):
 
         if not hasattr(value, "__len__"):
             value = [value]
@@ -167,7 +166,7 @@ class LognormalRadiusRetrieval(ExtinctionRetrieval):
         plot_meas_vec: bool = True,
         plot_averaging_kernel: bool = True,
         plot_effective_radius: bool = True,
-        aerosol_scale: Union[int, float] = 1000,
+        aerosol_scale: int | float = 1000,
         plot_cloud: bool = True,
         kernel_kwargs: dict = {},
         figsize=(5, 6),
@@ -494,7 +493,7 @@ class LognormalRadiusRetrieval(ExtinctionRetrieval):
         plot_averaging_kernel: bool = True,
         plot_effective_radius: bool = True,
         plot_backscatter: bool = False,
-        aerosol_scale: Union[int, float] = 1000,
+        aerosol_scale: int | float = 1000,
         plot_cloud: bool = True,
         kernel_kwargs: dict = {},
         figsize=(5, 6),

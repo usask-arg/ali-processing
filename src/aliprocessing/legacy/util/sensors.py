@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import numpy as np
-from skretrieval.core.lineshape import Rectangle
-
 from ali_processing.legacy.instrument.sensor import ALISensor, ALISensorER2
 from ali_processing.legacy.instrument.sensor_2channel import ALISensorDualChannel
+from skretrieval.core.lineshape import Rectangle
 
 
 def _simulation_sensor(

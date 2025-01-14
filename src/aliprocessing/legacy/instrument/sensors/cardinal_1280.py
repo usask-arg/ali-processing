@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from ali_processing.legacy.instrument.sensors.cardinal_640 import Cardinal640
 
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 from copy import copy
 from typing import List, Union
+
 import numpy as np
 import xarray as xr
-from sasktran import Geometry, StokesVector, LineOfSight
+from sasktran import Geometry, LineOfSight, StokesVector
 from skretrieval.core import OpticalGeometry
 from skretrieval.core.lineshape import LineShape
 from skretrieval.core.radianceformat import (

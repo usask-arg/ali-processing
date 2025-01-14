@@ -5,7 +5,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import sasktran as sk
-
 from ali_processing.legacy.instrument.simulator import ImagingSimulator
 from ali_processing.legacy.retrieval.particlesize import LognormalRadiusRetrieval
 from ali_processing.legacy.util.config import Config

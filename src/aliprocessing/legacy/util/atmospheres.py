@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import sasktran as sk
 import xarray as xr
-
 from ali_processing.legacy.util.config import Config
 from ali_processing.simulation.atmosphere.curtain import SimulationAtmosphere
 from ali_processing.simulation.atmosphere.opc import load_opc_profiles
