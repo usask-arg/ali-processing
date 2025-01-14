@@ -161,3 +161,10 @@ cython_debug/
 
 # netcdf files
 **/*/*.nc
+
+.pixi
+pixi.lock
+
+.ruff_cache
+
+src/ali_processing/_version.py
