@@ -6,12 +6,11 @@ from copy import copy
 from typing import List, Union
 
 import numpy as np
+from ali_processing.legacy.retrieval.measvec import MeasurementVector
 from skretrieval.core.radianceformat import RadianceBase
 from skretrieval.retrieval import ForwardModel
 from skretrieval.retrieval.statevector import StateVector, StateVectorElement
 from skretrieval.retrieval.target import GenericTarget
-
-from ali_processing.legacy.retrieval.measvec import MeasurementVector
 
 
 class GenericTargetWithMeasVec(GenericTarget):
@@ -31,9 +30,7 @@ class GenericTargetWithMeasVec(GenericTarget):
         super().__init__(state_vector)
         self._meas_vec_def = measurement_vector
 
-    def _internal_measurement_vector(
-        self, l1_data: Union[RadianceBase, list[RadianceBase]]
-    ):
+    def _internal_measurement_vector(self, l1_data: RadianceBase | list[RadianceBase]):
 
         # propagate the level 1 data through the measurement transforms
         result = self._meas_vec_def.meas_dict(l1_data)
@@ -87,7 +84,7 @@ class AerosolRetrieval(GenericTargetWithMeasVec):
         super().__init__(state_vector, measurement_vector)
 
     def _internal_measurement_vector(
-        self, l1_data: Union[RadianceBase, list[RadianceBase]], rayleigh_norm=None
+        self, l1_data: RadianceBase | list[RadianceBase], rayleigh_norm=None
     ):
 
         if rayleigh_norm is None:
@@ -155,7 +152,7 @@ class AerosolRetrieval(GenericTargetWithMeasVec):
     def initialize(
         self,
         forward_model: ForwardModel,
-        meas_l1: Union[RadianceBase, list[RadianceBase]],
+        meas_l1: RadianceBase | list[RadianceBase],
     ):
 
         super().initialize(forward_model, meas_l1)
@@ -233,7 +230,7 @@ class ParticleSizeRetrieval(GenericTargetWithMeasVec):
         )
 
     def _internal_measurement_vector(
-        self, l1_data: Union[RadianceBase, list[RadianceBase]], rayleigh_norm=True
+        self, l1_data: RadianceBase | list[RadianceBase], rayleigh_norm=True
     ):
 
         result = super()._internal_measurement_vector(l1_data)

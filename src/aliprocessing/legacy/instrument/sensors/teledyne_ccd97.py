@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-from skcomponents.optics import Filter
-
 from ali_processing.legacy.instrument.sensors.base_sensor import Sensor
+from skcomponents.optics import Filter
 
 
 class TeledyneCCD97(Sensor):

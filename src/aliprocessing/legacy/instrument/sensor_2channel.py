@@ -4,13 +4,12 @@ from typing import List, Union
 
 import numpy as np
 import xarray as xr
+from ali_processing.legacy.instrument.sensor import ALISensor
 from sasktran import Geometry
 from skretrieval.core.lineshape import DeltaFunction, Gaussian, LineShape, Rectangle
 from skretrieval.core.radianceformat import RadianceSpectralImage
 from skretrieval.core.sensor import OpticalGeometry
 from skretrieval.legacy.core.sensor.imager import SpectralImager
-
-from ali_processing.legacy.instrument.sensor import ALISensor
 
 
 class ALISensorDualChannel:
@@ -150,7 +149,7 @@ class ALISensorDualChannel:
         self.channel_2.ccd_temperature = value
 
     @property
-    def exposure_time(self) -> list[Union[float, np.ndarray]]:
+    def exposure_time(self) -> list[float | np.ndarray]:
         wavels = self.measurement_wavelengths()
         exp = []
         if any(wavels < self.split_wavelength_nm):

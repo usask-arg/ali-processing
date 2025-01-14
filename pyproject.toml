@@ -3,7 +3,7 @@ requires = ["setuptools>64", "wheel", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ali_processing"
+name = "aliprocessing"
 dynamic = ["version"]
 description="Aerosol Limb Imager processing code"
 readme = "README.md"
@@ -30,7 +30,7 @@ channels = ["conda-forge"]
 platforms = ["linux-64", "linux-aarch64", "linux-ppc64le", "osx-64", "osx-arm64", "win-64"]
 
 [tool.pixi.pypi-dependencies]
-ali_processing = { path = ".", editable = true }
+aliprocessing = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 numpy = "*"
@@ -68,7 +68,7 @@ readthedocs = { cmd = "rm -rf $READTHEDOCS_OUTPUT/html && cp -r docs/build/ $REA
 
 
 [tool.setuptools_scm]
-write_to = "src/ali_processing/_version.py"
+write_to = "src/aliprocessing/_version.py"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
@@ -109,7 +109,7 @@ extend-ignore = [
     "PLR",    # Design related pylint codes
     "E501",   # Line too long
 ]
-exclude=["src/ali_processing/legacy*", "src/_version.py"]
+exclude=["src/aliprocessing/legacy*", "src/_version.py"]
 src = ["src"]
 unfixable = [
     "T20",  # Removes print statements

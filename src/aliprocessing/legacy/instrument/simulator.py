@@ -7,19 +7,18 @@ from typing import Dict, List, Union
 import numpy as np
 import sasktran as sk
 import xarray as xr
+from ali_processing.legacy.instrument.sensor import ALISensor
+from ali_processing.legacy.instrument.sensor_2channel import ALISensorDualChannel
+from ali_processing.legacy.util.sampling import Sampling
 from sasktran import Atmosphere, SolarSpectrum
 from skretrieval.core import OpticalGeometry
 from skretrieval.core.radianceformat import RadianceGridded, RadianceSpectralImage
 
 # from skretrieval.legacy.core.sensor.imager import SpectralImager
 from skretrieval.legacy.core.sensor.spectrograph import Spectrograph
-from skretrieval.retrieval import ForwardModel
 from skretrieval.legacy.tomography.grids import OrbitalPlaneGrid
 from skretrieval.legacy.tomography.sasktran_ext.engine import EngineHRTwoDim
-
-from ali_processing.legacy.instrument.sensor import ALISensor
-from ali_processing.legacy.instrument.sensor_2channel import ALISensorDualChannel
-from ali_processing.legacy.util.sampling import Sampling
+from skretrieval.retrieval import ForwardModel
 
 
 class ImagingSimulator(ForwardModel):
@@ -64,7 +63,7 @@ class ImagingSimulator(ForwardModel):
 
     def __init__(
         self,
-        sensors: list[Union[ALISensor, ALISensorDualChannel]],
+        sensors: list[ALISensor | ALISensorDualChannel],
         optical_axis: list[OpticalGeometry],
         atmosphere: Atmosphere,
         options: dict = None,

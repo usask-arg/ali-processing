@@ -5,10 +5,9 @@ from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import xarray as xr
+from ali_processing.legacy.retrieval.measvec import Transformer
 from scipy.interpolate import UnivariateSpline
 from skretrieval.core.radianceformat import RadianceBase, RadianceGridded
-
-from ali_processing.legacy.retrieval.measvec import Transformer
 
 
 class SpectralRatio(Transformer):
@@ -86,7 +85,7 @@ class AltitudeNormalization(Transformer):
 
     def transform(
         self,
-        l1_data: Union[RadianceBase, list[RadianceBase]],
+        l1_data: RadianceBase | list[RadianceBase],
         wf=None,
         covariance=False,
     ):
@@ -242,7 +241,7 @@ class WavelengthSelect(Transformer):
 
     def transform(
         self,
-        l1_data: Union[RadianceBase, list[RadianceBase]],
+        l1_data: RadianceBase | list[RadianceBase],
         wf=None,
         covariance=False,
     ):
@@ -363,7 +362,7 @@ class SplineSmoothing(Transformer):
 
     def transform(
         self,
-        l1_data: Union[RadianceBase, list[RadianceBase]],
+        l1_data: RadianceBase | list[RadianceBase],
         wf=None,
         covariance=False,
     ):
@@ -408,7 +407,7 @@ class VerticalDerivative(Transformer):
 
     def transform(
         self,
-        l1_data: Union[RadianceBase, list[RadianceBase]],
+        l1_data: RadianceBase | list[RadianceBase],
         wf=None,
         covariance=False,
     ):
@@ -468,7 +467,7 @@ class AltitudeBinning(Transformer):
 
     def transform(
         self,
-        l1_data: Union[RadianceBase, list[RadianceBase]],
+        l1_data: RadianceBase | list[RadianceBase],
         wf=None,
         covariance=False,
     ):
@@ -513,7 +512,7 @@ class RowAverage(Transformer):
 
     def transform(
         self,
-        l1_data: Union[RadianceBase, list[RadianceBase]],
+        l1_data: RadianceBase | list[RadianceBase],
         wf=None,
         covariance=False,
     ):
@@ -551,7 +550,7 @@ class Truncate(Transformer):
 
     def transform(
         self,
-        l1_data: Union[RadianceBase, list[RadianceBase]],
+        l1_data: RadianceBase | list[RadianceBase],
         wf=None,
         covariance=False,
     ):

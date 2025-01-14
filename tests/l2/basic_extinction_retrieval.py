@@ -6,7 +6,6 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import sasktran as sk
-
 from ali_processing.legacy.instrument.simulator import ImagingSimulator
 from ali_processing.legacy.retrieval.extinction import ExtinctionRetrieval
 from ali_processing.legacy.util.config import Config

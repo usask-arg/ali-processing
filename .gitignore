@@ -167,4 +167,4 @@ pixi.lock
 
 .ruff_cache
 
-src/ali_processing/_version.py
+src/aliprocessing/_version.py
