@@ -12,19 +12,12 @@ from skretrieval.retrieval.processing import Retrieval
 from aliprocessing.l1b.data import L1bImage
 from aliprocessing.l2.ancillary import Ancillary
 from aliprocessing.l2.forwardmodel import ALIForwardModel
+from aliprocessing.l2.optical import aerosol_median_radius_db
 
 
 @Retrieval.register_optical_property("stratospheric_aerosol")
 def stratospheric_aerosol_optical_property(*args, **kwargs):
-    refrac = sk.mie.refractive.H2SO4()
-    dist = sk.mie.distribution.LogNormalDistribution().freeze(mode_width=1.6)
-
-    return sk.database.MieDatabase(
-        dist,
-        refrac,
-        np.array([470, 525, 745, 1020, 1500]),
-        median_radius=np.arange(10, 400, 10.0),
-    )
+    return aerosol_median_radius_db()
 
 
 def process_l1b_to_l2_image(
@@ -71,7 +64,9 @@ def process_l1b_to_l2_image(
         "threading_model": sk.ThreadingModel.Wavelength,
         "num_successive_orders_iterations": 1,
         "num_sza": 1,
+        "input_validation_mode": sk.InputValidationMode.Disabled,
     }
+    model_kwargs.update(kwargs.get("model_kwargs", {}))
 
     minimizer_kwargs = {
         "method": "trf",
@@ -80,6 +75,7 @@ def process_l1b_to_l2_image(
         "max_nfev": 200,
         "ftol": 1e-6,
     }
+    minimizer_kwargs.update(kwargs.get("minimizer_kwargs", {}))
 
     state_kwargs = {
         "absorbers": {
@@ -109,7 +105,7 @@ def process_l1b_to_l2_image(
                         ),
                         "tikh_factor": 1e1,
                         "min_value": 10,
-                        "max_value": 300,
+                        "max_value": kwargs.get("max_median_radius", 589.0),
                     },
                 },
                 "prior": {
@@ -161,5 +157,21 @@ def process_l1b_to_l2_image(
 
     results["state"]["latitude"] = ref_lat
     results["state"]["longitude"] = ref_lon
+
+    results["state"]["num_iterations"] = results["minimizer"]["minimizer"]["nfev"]
+    results["state"]["cost"] = results["minimizer"]["minimizer"]["cost"]
+
+    results["state"]["solar_zenith_angle"] = np.rad2deg(
+        np.arccos(l1b_image.reference_cos_sza()["I"])
+    )
+    results["state"]["solar_azimuth_angle"] = (
+        l1b_image.spectra["I"]._ds["relative_solar_azimuth_angle"].mean()
+    )
+
+    cos_scatter = np.sin(np.deg2rad(results["state"]["solar_zenith_angle"])) * np.cos(
+        np.deg2rad(results["state"]["solar_zenith_angle"])
+    )
+
+    results["state"]["solar_scattering_angle"] = np.rad2deg(np.arccos(cos_scatter))
 
     return results["state"]
