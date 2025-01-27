@@ -168,3 +168,5 @@ pixi.lock
 .ruff_cache
 
 src/aliprocessing/_version.py
+
+*.DS_Store*
