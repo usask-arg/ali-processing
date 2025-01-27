@@ -94,16 +94,19 @@ def process_l1b_to_l2_image(
                 "nominal_wavelength": 745,
                 "retrieved_quantities": {
                     "extinction_per_m": {
-                        "prior_influence": 1e-6,
-                        "tikh_factor": 1e-2,
+                        "prior_influence": kwargs.get(
+                            "extinction_prior_influence", 1e-6
+                        ),
+                        "tikh_factor": kwargs.get("extinction_tikh_factor", 1e-2),
                         "min_value": 0,
                         "max_value": 1e-3,
+                        "log_space": kwargs.get("extinction_log_space", False),
                     },
                     "median_radius": {
                         "prior_influence": kwargs.get(
                             "median_radius_prior_influence", 1e-2
                         ),
-                        "tikh_factor": 1e1,
+                        "tikh_factor": kwargs.get("median_radius_tikh_factor", 1e1),
                         "min_value": 10,
                         "max_value": kwargs.get("max_median_radius", 589.0),
                     },
@@ -116,10 +119,13 @@ def process_l1b_to_l2_image(
         },
         "surface": {
             "lambertian_albedo": {
-                "prior_influence": 0,
-                "tikh_factor": 1e-4,
+                "prior_influence": kwargs.get("albedo_prior_influence", 0),
+                "tikh_factor": kwargs.get("albedo_tikh_factor", 1e-4),
                 "log_space": False,
-                "wavelengths": np.atleast_1d(l1b_image.sample_wavelengths()["I"]),
+                "wavelengths": kwargs.get(
+                    "albedo_wavelengths",
+                    np.atleast_1d(l1b_image.sample_wavelengths()["I"]),
+                ),
                 "initial_value": 0.3,
                 "out_bounds_mode": "extend",
             },
