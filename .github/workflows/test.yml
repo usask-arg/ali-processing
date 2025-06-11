@@ -33,7 +33,7 @@ jobs:
           submodules: true
 
       - name: Setup environment
-        uses: prefix-dev/setup-pixi@v0.8.4
+        uses: prefix-dev/setup-pixi@v0.8.8
         with:
           environments: ${{ matrix.environment }}
 
@@ -71,7 +71,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build Docker image
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1
         with:
           context: .
           push: false
