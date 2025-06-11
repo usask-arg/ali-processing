@@ -11,7 +11,7 @@ def aerosol_median_radius_db():
     db = sk.database.MieDatabase(
         dist,
         refrac,
-        np.array([470, 525, 745, 1020, 1230, 1450, 1500]),
+        np.array([470, 525, 745, 1020, 1230, 1450, 1500, 1550, 1600, 1650]),
         median_radius=np.arange(10, 600, 10.0),
     )
 
