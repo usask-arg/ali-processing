@@ -273,7 +273,7 @@ def get_filename_from_date(date, bimodal=True):
     files = []
     times = []
     for inst in instruments:
-        for file in os.listdir(Path(folder) / inst):
+        for file in os.listdir(Path(folder) / inst):  # noqa: PTH208
             if file.split(".")[-1] == "szd":
                 times.append(pd.Timestamp(file.split("_")[0]))
                 files.append(Path(folder) / inst / file)
@@ -319,7 +319,7 @@ def load_opc_profiles(instrument="WPC", bimodal=True, altitude_res=0.5):
     alts = alt_edges[0:-1] + np.diff(alt_edges) / 2
 
     ds = []
-    for file in os.listdir(Path(folder) / instrument):
+    for file in os.listdir(Path(folder) / instrument):  # noqa: PTH208
         if file.split(".")[-1] == "szd":
             time = pd.Timestamp(file.split("_")[0])
             data = read_file(Path(folder) / instrument / file)
