@@ -185,6 +185,8 @@ def process_l1b_to_l2_image(
     results["state"]["solar_scattering_angle"] = np.rad2deg(np.arccos(cos_scatter))
 
     for key in results["simulated_l1"]:
-        results["state"][f"simulated_l1_{key}_radiance"] = results["simulated_l1"][key].data.radiance
+        results["state"][f"simulated_l1_{key}_radiance"] = results["simulated_l1"][
+            key
+        ].data.radiance
 
     return results["state"]
