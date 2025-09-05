@@ -28,6 +28,7 @@ def process_l1b_to_l2_image(
         por_image.altitude.to_numpy()[good],
         por_image.pressure.to_numpy()[good],
         por_image.temperature.to_numpy()[good],
+        **kwargs.get("ancillary_cfg", {}),
     )
 
     sample_wavel = l1b_image.sample_wavelengths()["I"]
@@ -69,6 +70,7 @@ def process_l1b_to_l2_image(
     model_kwargs.update(kwargs.get("model_kwargs", {}))
 
     minimizer_kwargs = {
+        "minimizer": "scipy",
         "method": "trf",
         "xtol": 1e-15,
         "include_bounds": True,
@@ -133,6 +135,8 @@ def process_l1b_to_l2_image(
         "altitude_grid": np.arange(0.0, 65001.0, 1000.0),
     }
 
+    state_kwargs.update(kwargs.get("state_kwargs", {}))
+
     ret = Retrieval(
         observation=l1b_image,
         forward_model_cfg={
@@ -147,7 +151,7 @@ def process_l1b_to_l2_image(
             },
         },
         measvec=meas_vec,
-        minimizer="scipy",
+        minimizer=minimizer_kwargs.pop("minimizer"),
         ancillary=anc,
         l1_kwargs={},
         model_kwargs=model_kwargs,
@@ -175,9 +179,14 @@ def process_l1b_to_l2_image(
     )
 
     cos_scatter = np.sin(np.deg2rad(results["state"]["solar_zenith_angle"])) * np.cos(
-        np.deg2rad(results["state"]["solar_zenith_angle"])
+        np.deg2rad(results["state"]["solar_azimuth_angle"])
     )
 
     results["state"]["solar_scattering_angle"] = np.rad2deg(np.arccos(cos_scatter))
+
+    for key in results["simulated_l1"]:
+        results["state"][f"simulated_l1_{key}_radiance"] = results["simulated_l1"][
+            key
+        ].data.radiance
 
     return results["state"]
