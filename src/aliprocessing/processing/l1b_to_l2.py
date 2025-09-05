@@ -28,7 +28,7 @@ def process_l1b_to_l2_image(
         por_image.altitude.to_numpy()[good],
         por_image.pressure.to_numpy()[good],
         por_image.temperature.to_numpy()[good],
-        **kwargs.get("ancillary_cfg", {})
+        **kwargs.get("ancillary_cfg", {}),
     )
 
     sample_wavel = l1b_image.sample_wavelengths()["I"]
@@ -184,7 +184,9 @@ def process_l1b_to_l2_image(
 
     results["state"]["solar_scattering_angle"] = np.rad2deg(np.arccos(cos_scatter))
 
-    for siml1 in results['simulated_l1'].keys():
-        results["state"]["simulated_l1_%s_radiance" % siml1] = results['simulated_l1'][siml1].data.radiance
+    for siml1 in results["simulated_l1"].keys():
+        results["state"]["simulated_l1_%s_radiance" % siml1] = results["simulated_l1"][
+            siml1
+        ].data.radiance
 
     return results["state"]
