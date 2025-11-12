@@ -38,7 +38,7 @@ def process_l1b_to_l2_image(
         str(w): {
             "wavelength": [w],
             "weights": [1],
-            "altitude_range": [0, 40000],
+            "altitude_range": [kwargs.get("low_measurement_bound", 10000), 40000],
             "normalization_range": [40000, 45000],
         }
         for w in sample_wavel
