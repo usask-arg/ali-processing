@@ -128,7 +128,7 @@ def process_l1b_to_l2_image(
                     "albedo_wavelengths",
                     np.atleast_1d(l1b_image.sample_wavelengths()["I"]),
                 ),
-                "initial_value": 0.3,
+                "initial_value": kwargs.get("albedo_initial_value", 0.3),
                 "out_bounds_mode": "extend",
             },
         },
