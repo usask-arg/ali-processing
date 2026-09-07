@@ -69,7 +69,7 @@ class GEMAtmosphere:
         data = xr.open_dataset(self.gem_file).sel(point=self.point)
         return float(data.lon.to_numpy())
 
-    def species_liquid_cloud(self, altitudes: None | np.ndarray = None, radius=10.0):
+    def species_liquid_cloud(self, altitudes: np.ndarray | None = None, radius=10.0):
         if altitudes is None:
             altitudes = np.arange(0.0, 100000, 250.0)
 
@@ -93,7 +93,7 @@ class GEMAtmosphere:
             species="WATER",
         )
 
-    def species_ice_cloud(self, altitudes: None | np.ndarray = None, radius=22.0):
+    def species_ice_cloud(self, altitudes: np.ndarray | None = None, radius=22.0):
         if altitudes is None:
             altitudes = np.arange(0.0, 100000, 250.0)
 
@@ -113,7 +113,7 @@ class GEMAtmosphere:
 
     def species_aerosol(
         self,
-        altitudes: None | np.ndarray = None,
+        altitudes: np.ndarray | None = None,
         radius: float = 0.08,
         width: float = 1.6,
         date: str | None = None,
@@ -183,7 +183,7 @@ class GEMAtmosphere:
             species="H2SO4",
         )
 
-    def species_water_vapour(self, altitudes: None | np.ndarray = None):
+    def species_water_vapour(self, altitudes: np.ndarray | None = None):
 
         if altitudes is None:
             altitudes = np.arange(0.0, 100000, 250.0)

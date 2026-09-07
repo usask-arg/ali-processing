@@ -15,7 +15,7 @@ class ACEAtmosphere:
         self.folder = folder
 
     def load_species(
-        self, species, latitude: float = 0.0, altitude: None | np.ndarray = None
+        self, species, latitude: float = 0.0, altitude: np.ndarray | None = None
     ):
         if altitude is None:
             altitude = np.arange(0.0, 100000.0, 1000.0)
@@ -76,7 +76,7 @@ class ACEAtmosphere:
         max_lat=90,
         min_time="2000-01-01",
         max_time="2022-01-01",
-        altitude: None | np.ndarray = None,
+        altitude: np.ndarray | None = None,
     ):
 
         if altitude is None:
