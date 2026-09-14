@@ -192,7 +192,7 @@ class SpeciesAerosolOPC(sk.SpeciesAerosol):
 
     def __init__(
         self,
-        altitudes: None | np.ndarray = None,
+        altitudes: np.ndarray | None = None,
         mode="fine",
         species: str = "H2SO4",
         interp: str = "linear",
