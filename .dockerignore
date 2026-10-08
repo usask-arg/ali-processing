@@ -1,0 +1,8 @@
+.venv
+.pixi
+**/__pycache__
+.pytest_cache
+.ruff_cache
+dist
+docs/build
+uv.lock
