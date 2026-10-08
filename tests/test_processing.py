@@ -31,7 +31,9 @@ def test_process_l1b_to_l2_image_smoke(make_spectra, por_image, pol_state):
     # Exercises the full retrieval pipeline for a couple of iterations; checks that everything is
     # wired together and the outputs are well formed, not that the retrieval converges
     nlos = len(TANGENT_ALTITUDES)
-    intensity = np.exp(-TANGENT_ALTITUDES / 7000.0)[None, :] * np.array([1.0, 0.5])[:, None]
+    intensity = (
+        np.exp(-TANGENT_ALTITUDES / 7000.0)[None, :] * np.array([1.0, 0.5])[:, None]
+    )
     image = L1bImage(
         {
             "I": make_spectra(radiance=intensity, tangent_altitude=TANGENT_ALTITUDES),
