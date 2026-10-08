@@ -84,14 +84,14 @@ class SimulationAtmosphere:
         self._calipso_angles = None
 
     def angle_from_latitude(self, target_latitude):
-        lat, lon, angles = self._calipso_position()
+        lat, _lon, angles = self._calipso_position()
         return np.interp(target_latitude, lat, angles)
 
     def angle_from_mjd(self, target_mjd):
         calipso = xr.open_dataset(self._file, group="CALIPSO")
         time = calipso.time.to_numpy()
         mjd = (time - np.datetime64("1858-11-17")) / np.timedelta64(1, "D")
-        lat, lon, angles = self._calipso_position()
+        _lat, _lon, angles = self._calipso_position()
         return np.interp(target_mjd, mjd, angles)
 
     @property
@@ -407,11 +407,11 @@ class SimulationAtmosphere:
         return self._downsample_to_atmo_grid(h2o).fillna(0.0)
 
     def latitude(self, orbit_angle):
-        lat, lon, angles = self._calipso_position()
+        lat, _lon, angles = self._calipso_position()
         return np.interp(orbit_angle, angles, lat)
 
     def longitude(self, orbit_angle):
-        lat, lon, angles = self._calipso_position()
+        _lat, lon, angles = self._calipso_position()
         lons = np.interp(orbit_angle, angles, lon)
         lon[lon < 0] = lon[lon < 0] + 360
         lons2 = np.interp(orbit_angle, angles, lon)
@@ -431,7 +431,7 @@ class SimulationAtmosphere:
 
     def mjd(self, orbit_angle):
         calipso = xr.open_dataset(self._file, group="CALIPSO")
-        lat, lon, angles = self._calipso_position()
+        _lat, _lon, angles = self._calipso_position()
         time = calipso.time.to_numpy()
 
         mjds = (time - np.datetime64("1858-11-17")) / np.timedelta64(1, "D")
