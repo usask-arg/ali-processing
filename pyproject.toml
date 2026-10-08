@@ -22,9 +22,6 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
-[project.optional-dependencies]
-plotting = ["matplotlib"]
-
 [dependency-groups]
 test = ["pytest>=8.3.3"]
 docs = ["sphinx", "myst-nb", "sphinx-book-theme", "sphinx-design"]
@@ -43,7 +40,7 @@ filterwarnings = [
 testpaths = ["tests"]
 
 [tool.ruff]
-exclude = ["src/aliprocessing/legacy*", "src/aliprocessing/_version.py"]
+exclude = ["src/aliprocessing/_version.py"]
 src = ["src"]
 
 [tool.ruff.lint]

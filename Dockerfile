@@ -13,7 +13,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 COPY . .
 # install the package and its runtime dependencies into `/app/.venv`
-RUN uv sync --no-dev --no-editable --extra plotting
+RUN uv sync --no-dev --no-editable
 
 FROM python:3.13-slim-trixie AS production
 WORKDIR /app
