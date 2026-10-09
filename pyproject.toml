@@ -7,7 +7,7 @@ name = "aliprocessing"
 dynamic = ["version"]
 description="Aerosol Limb Imager processing code"
 readme = "README.md"
-dependencies = ["numpy", "sasktran2", "skretrieval", "xarray"]
+dependencies = ["numpy", "sasktran2", "skretrieval>=2026.10.0", "xarray"]
 authors = [
     { name = "Landon Rieger", email = "landon.rieger@usask.ca" },
     { name = "Daniel Zawada", email = "daniel.zawada@usask.ca"}
