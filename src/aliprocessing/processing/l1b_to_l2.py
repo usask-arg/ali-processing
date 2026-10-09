@@ -31,7 +31,8 @@ def process_l1b_to_l2_image(
         **kwargs.get("ancillary_cfg", {}),
     )
 
-    sample_wavel = l1b_image.sample_wavelengths()["I"]
+    # Plain floats, skretrieval uses the triplet wavelengths as dictionary keys
+    sample_wavel = l1b_image.sample_wavelengths()["I"].to_numpy()
 
     # Triplets
     triplets = {
