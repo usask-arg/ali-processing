@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import sasktran2 as sk
+import xarray as xr
 from skretrieval.core.sasktranformat import SASKTRANRadiance
 from skretrieval.retrieval.forwardmodel import IdealViewingSpectrograph
 
@@ -72,71 +73,20 @@ class ALIForwardModel(IdealViewingSpectrograph):
                     continue
 
                 if state == "dolp":
-                    dolp_num = np.sqrt(
-                        rad_copy["radiance"].isel(stokes=1) ** 2
-                        + rad_copy["radiance"].isel(stokes=2) ** 2
-                    )
-                    dolp = dolp_num / rad_copy["radiance"].isel(stokes=0)
-                    d_dolp_num = (
-                        rad_copy["wf"].isel(stokes=1)
-                        * rad_copy["radiance"].isel(stokes=1)
-                        / dolp_num
-                        + rad_copy["wf"].isel(stokes=2)
-                        * rad_copy["radiance"].isel(stokes=2)
-                        / dolp_num
-                    )
-                    d_dolp = d_dolp_num / rad_copy["radiance"].isel(
-                        stokes=0
-                    ) - dolp * rad_copy["wf"].isel(stokes=0) / rad_copy[
-                        "radiance"
-                    ].isel(
-                        stokes=0
-                    )
+                    dolp, d_dolp = _dolp(rad_copy)
 
                     sk2_rad.data["radiance"].to_numpy()[:, :, i] = dolp
                     sk2_rad.data["wf"].to_numpy()[:, :, :, i] = d_dolp
 
                 if state == "aolp":
-                    aolp = 0.5 * np.arctan(
-                        rad_copy["radiance"].isel(stokes=2)
-                        / rad_copy["radiance"].isel(stokes=1)
-                    )
-
-                    d_aolp = 0.5 * (
-                        (
-                            1
-                            / (
-                                1
-                                + (
-                                    rad_copy["radiance"].isel(stokes=2)
-                                    / rad_copy["radiance"].isel(stokes=1)
-                                )
-                                ** 2
-                            )
-                        )
-                        * (
-                            rad_copy["wf"].isel(stokes=2)
-                            / rad_copy["radiance"].isel(stokes=1)
-                            - rad_copy["radiance"].isel(stokes=2)
-                            / rad_copy["radiance"].isel(stokes=1) ** 2
-                            * rad_copy["wf"].isel(stokes=1)
-                        )
-                    )
+                    aolp, d_aolp = _aolp(rad_copy)
 
                     sk2_rad.data["radiance"].to_numpy()[:, :, i] = aolp
                     sk2_rad.data["wf"].to_numpy()[:, :, :, i] = d_aolp.transpose(
                         "x", "spectral_grid", "los"
                     )
                 if state == "q":
-                    q = rad_copy["radiance"].isel(stokes=1) / rad_copy["radiance"].isel(
-                        stokes=0
-                    )
-
-                    d_q = rad_copy["wf"].isel(stokes=1) / rad_copy["radiance"].isel(
-                        stokes=0
-                    ) - q * rad_copy["wf"].isel(stokes=0) / rad_copy["radiance"].isel(
-                        stokes=0
-                    )
+                    q, d_q = _q(rad_copy)
 
                     sk2_rad.data["radiance"].to_numpy()[:, :, i] = q
                     sk2_rad.data["wf"].to_numpy()[:, :, :, i] = d_q
@@ -146,3 +96,95 @@ class ALIForwardModel(IdealViewingSpectrograph):
             self._observation.append_information_to_l1(l1)
 
         return l1
+
+
+def _dolp(rad: xr.Dataset) -> tuple[xr.DataArray, xr.DataArray]:
+    """
+    Degree of linear polarization, sqrt(Q^2 + U^2) / I, and its derivative with respect to the state vector
+
+    Parameters
+    ----------
+    rad : xr.Dataset
+        Contains "radiance" with a "stokes" dimension and "wf", the derivative of "radiance" with respect
+        to the state vector
+
+    Returns
+    -------
+    tuple[xr.DataArray, xr.DataArray]
+        The degree of linear polarization and its weighting function
+    """
+    dolp_num = np.sqrt(
+        rad["radiance"].isel(stokes=1) ** 2 + rad["radiance"].isel(stokes=2) ** 2
+    )
+    dolp = dolp_num / rad["radiance"].isel(stokes=0)
+    d_dolp_num = (
+        rad["wf"].isel(stokes=1) * rad["radiance"].isel(stokes=1) / dolp_num
+        + rad["wf"].isel(stokes=2) * rad["radiance"].isel(stokes=2) / dolp_num
+    )
+    d_dolp = d_dolp_num / rad["radiance"].isel(stokes=0) - dolp * rad["wf"].isel(
+        stokes=0
+    ) / rad["radiance"].isel(stokes=0)
+
+    return dolp, d_dolp
+
+
+def _aolp(rad: xr.Dataset) -> tuple[xr.DataArray, xr.DataArray]:
+    """
+    Angle of linear polarization, 0.5 * arctan(U / Q), and its derivative with respect to the state vector
+
+    Parameters
+    ----------
+    rad : xr.Dataset
+        Contains "radiance" with a "stokes" dimension and "wf", the derivative of "radiance" with respect
+        to the state vector
+
+    Returns
+    -------
+    tuple[xr.DataArray, xr.DataArray]
+        The angle of linear polarization in radians and its weighting function
+    """
+    aolp = 0.5 * np.arctan(
+        rad["radiance"].isel(stokes=2) / rad["radiance"].isel(stokes=1)
+    )
+
+    d_aolp = 0.5 * (
+        (
+            1
+            / (
+                1
+                + (rad["radiance"].isel(stokes=2) / rad["radiance"].isel(stokes=1)) ** 2
+            )
+        )
+        * (
+            rad["wf"].isel(stokes=2) / rad["radiance"].isel(stokes=1)
+            - rad["radiance"].isel(stokes=2)
+            / rad["radiance"].isel(stokes=1) ** 2
+            * rad["wf"].isel(stokes=1)
+        )
+    )
+
+    return aolp, d_aolp
+
+
+def _q(rad: xr.Dataset) -> tuple[xr.DataArray, xr.DataArray]:
+    """
+    Normalized Stokes Q / I and its derivative with respect to the state vector
+
+    Parameters
+    ----------
+    rad : xr.Dataset
+        Contains "radiance" with a "stokes" dimension and "wf", the derivative of "radiance" with respect
+        to the state vector
+
+    Returns
+    -------
+    tuple[xr.DataArray, xr.DataArray]
+        Q / I and its weighting function
+    """
+    q = rad["radiance"].isel(stokes=1) / rad["radiance"].isel(stokes=0)
+
+    d_q = rad["wf"].isel(stokes=1) / rad["radiance"].isel(stokes=0) - q * rad[
+        "wf"
+    ].isel(stokes=0) / rad["radiance"].isel(stokes=0)
+
+    return q, d_q

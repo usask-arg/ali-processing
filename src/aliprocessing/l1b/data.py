@@ -209,7 +209,7 @@ class L1bFileWriter:
         self._keys = l1b_data[0].spectra.keys()
 
         self._data = {
-            key: xr.concat([l1b.spectra[key] for l1b in l1b_data], dim="time")
+            key: xr.concat([l1b.spectra[key].ds for l1b in l1b_data], dim="time")
             for key in self._keys
         }
 
@@ -217,8 +217,10 @@ class L1bFileWriter:
         pass
 
     def save(self, out_file: Path):
-        for key in self._keys:
-            self._data[key].to_netcdf(out_file.as_posix(), group=key)
+        for i, key in enumerate(self._keys):
+            self._data[key].to_netcdf(
+                out_file.as_posix(), group=key, mode="w" if i == 0 else "a"
+            )
 
 
 class L1bDataSet:

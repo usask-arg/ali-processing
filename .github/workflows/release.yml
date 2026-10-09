@@ -10,63 +10,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-upload-conda:
-    runs-on: ubuntu-latest
-
-    if: github.repository_owner == 'usask-arg'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          submodules: true
-
-      - name: Setup Conda build environment
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: ci/conda-envs/mamba-build.yml
-
-      - name: Build Conda package
-        shell: bash -el {0}
-        run: |
-          conda config --set anaconda_upload yes
-          conda mambabuild conda.recipe --output-folder pkgs/ --user usask-arg --token ${{ secrets.ANACONDA_TOKEN }} --no-test
-
-      - name: Save conda package
-        uses: actions/upload-artifact@v5
-        with:
-          name: conda
-          path: pkgs
-
   build_wheel:
     name: Build Wheel
     runs-on: ubuntu-latest
     if: github.repository_owner == 'usask-arg'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
-          submodules: true
           fetch-depth: 0
-      - uses: actions/setup-python@v6
-        name: Install Python
-        with:
-          python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build twine
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
       - name: Build tarball and wheels
         run: |
           git clean -xdf
           git restore -SW .
-          python -m build
+          uv build
 
       - name: Check built artifacts
         run: |
-          python -m twine check --strict dist/*
+          uvx twine check --strict dist/*
           pwd
           if [ -f dist/*-0.0.0.tar.gz ]; then
             echo "❌ INVALID VERSION NUMBER"
@@ -74,7 +38,7 @@ jobs:
           else
             echo "✅ Looks good"
           fi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: releases
           path: dist
@@ -89,51 +53,12 @@ jobs:
       id-token: write
     if: (github.event_name == 'release')
     steps:
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.x"
-
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: releases
           path: dist
 
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1.14.2
         with:
           verbose: true
-
-  build-and-push-image:
-    name: Build and push Docker image
-    env:
-      REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}

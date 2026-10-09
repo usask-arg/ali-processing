@@ -7,10 +7,10 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 from __future__ import annotations
 
-project = 'usask_arg_example'
+project = 'aliprocessing'
 copyright = '2024, USask-ARG'
 author = 'USask-ARG'
-github_url = ''
+github_url = 'https://github.com/usask-arg/ali-processing'
 
 from importlib.metadata import version as get_version
 
@@ -60,8 +60,6 @@ autoclass_content = 'both'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "sphinx_book_theme"
-html_static_path = ['_static']
-html_css_files = ["locals.css"]
 
 html_theme_options = {
     "github_url": github_url,
