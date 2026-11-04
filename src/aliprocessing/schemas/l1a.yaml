@@ -1,0 +1,223 @@
+product: L1A
+schema_version: 0.1.0
+status: draft
+description: >
+  ALI raw detector frames with the spacecraft position and attitude at each frame.
+  Each frame holds the three polarization sub-images at one spectral channel. A
+  granule holds a time series of frames.
+
+dimensions:
+  time:
+    coordinate: true
+    description: Frame within the granule.
+  detector_row:
+    description: >
+      Detector row of the full frame. Roughly along the vertical field of view;
+      the exact direction of each pixel is `pixel_elevation_angle` and
+      `pixel_azimuth_angle` in the calibration database.
+  detector_column:
+    description: >
+      Detector column of the full frame, including the gaps between the
+      sub-images.
+
+file:
+  description: >
+    One file is a granule: a collection of consecutive frames along `time`, for
+    example a quarter orbit. A granule holds whole observation sets.
+
+attributes:
+  schema_version:
+    dtype: str
+    required: true
+    role: processing
+    description: Version of this schema the granule conforms to.
+
+variables:
+  # ---------------------------------------------------------------- measurement
+  image:
+    dims: [time, detector_row, detector_column]
+    dtype: float
+    units: count
+    required: true
+    role: measurement
+    description: >
+      Raw detector signal of the full frame, before any correction. When several
+      exposures are averaged into one frame, this is their mean.
+
+  # ---------------------------------------------------------------- acquisition
+  spectral_channel:
+    dims: [time]
+    dtype: int
+    units: "1"
+    required: true
+    valid_min: -1
+    role: acquisition
+    description: >
+      Filter-wheel position the frame was taken at; indexes spectral_channel in
+      the calibration database. -1 is the blank position (no light reaches the
+      detector); blank frames belong to no observation set and L1A→L1B does not
+      use them.
+
+  observation_set:
+    dims: [time]
+    dtype: int
+    units: "1"
+    required: true
+    valid_min: -1
+    role: acquisition
+    description: >
+      Observation set the frame belongs to. Frames with the same value become one
+      observation set in L1B. -1 for blank frames.
+
+  exposure_time:
+    dims: [time]
+    dtype: float
+    units: s
+    required: true
+    valid_min: 0
+    role: acquisition
+    description: Integration time of a single exposure.
+
+  num_averaged_exposures:
+    dims: [time]
+    dtype: int
+    units: "1"
+    required: false
+    default: 1
+    valid_min: 1
+    role: acquisition
+    description: Number of equal exposures averaged into the frame.
+
+  # ------------------------------------------------------------------- geometry
+  time:
+    dims: [time]
+    dtype: datetime
+    required: true
+    role: geometry
+    description: >
+      Midpoint of the frame's exposure. When several exposures are averaged, the
+      midpoint between the start of the first and the end of the last.
+
+  spacecraft_latitude:
+    dims: [time]
+    dtype: float
+    units: degrees_north
+    required: true
+    valid_min: -90
+    valid_max: 90
+    role: geometry
+    description: WGS84 geodetic latitude of the observer.
+
+  spacecraft_longitude:
+    dims: [time]
+    dtype: float
+    units: degrees_east
+    required: true
+    role: geometry
+    description: WGS84 longitude of the observer.
+
+  spacecraft_altitude:
+    dims: [time]
+    dtype: float
+    units: m
+    required: true
+    role: geometry
+    description: Altitude of the observer above the WGS84 ellipsoid.
+
+  boresight_azimuth_angle:
+    dims: [time]
+    dtype: float
+    units: degree
+    required: true
+    valid_min: 0
+    valid_max: 360
+    role: geometry
+    description: >
+      Azimuth of the instrument boresight at the observer, clockwise from true
+      north (0 north, 90 east), wrapped to [0, 360).
+
+  boresight_elevation_angle:
+    dims: [time]
+    dtype: float
+    units: degree
+    required: true
+    valid_min: -90
+    valid_max: 90
+    role: geometry
+    description: >
+      Angle of the instrument boresight above the local horizontal at the
+      observer (perpendicular to the WGS84 normal). Negative when looking down
+      at the limb.
+
+  boresight_roll_angle:
+    dims: [time]
+    dtype: float
+    units: degree
+    required: true
+    valid_min: -180
+    valid_max: 180
+    role: geometry
+    description: >
+      Rotation of the instrument about the boresight. 0 when the instrument up
+      axis (increasing pixel_elevation_angle) lies in the vertical plane through
+      the boresight; positive clockwise looking along the boresight.
+
+  # -------------------------------------------------------------------- quality
+  saturated:
+    dims: [time, detector_row, detector_column]
+    dtype: bool
+    required: false
+    role: quality
+    description: >
+      True where any averaged exposure saturated. Carried into L1B as
+      saturated_fraction.
+
+groups:
+  simulation:
+    description: >
+      Simulator-only diagnostics, present only in simulated granules. L1A→L1B
+      processing never reads this group.
+    variables:
+      image_noiseless:
+        dims: [time, detector_row, detector_column]
+        dtype: float
+        units: count
+        required: false
+        role: simulator_truth
+        description: Expected `image` before noise was applied.
+
+      noise_enabled:
+        dims: []
+        dtype: bool
+        required: false
+        role: simulator_truth
+        description: Whether the simulator applied a noise realization.
+
+      noise_seed:
+        dims: []
+        dtype: int
+        required: false
+        role: simulator_truth
+        description: Random seed used for the noise realization.
+
+constraints:
+  - id: time-increasing
+    rule: time is strictly increasing within a granule.
+  - id: image-finite
+    rule: Every element of `image` is finite.
+  - id: detector-matches-calibration
+    rule: >
+      detector_row and detector_column have the same lengths as in the
+      calibration database used to process the granule.
+  - id: spectral-channel-known
+    rule: >
+      Every spectral_channel is -1 or less than the length of spectral_channel in
+      the calibration database.
+  - id: observation-sets-complete
+    rule: >
+      Ignoring blank frames, observation_set is non-decreasing in time, and each
+      observation set holds exactly one frame at each spectral channel of the
+      calibration database. observation_set is -1 exactly where spectral_channel
+      is -1.
+
+open_questions: []

@@ -1,0 +1,328 @@
+product: L1B
+schema_version: 0.1.0
+status: draft
+description: >
+  Calibrated radiance and linear polarization on a common tangent-altitude grid,
+  for each across-track bin and spectral channel. A granule holds a series of
+  observation sets; an observation set is one frame at each spectral channel.
+
+dimensions:
+  observation_set:
+    description: Observation set within the granule.
+  across_track:
+    description: >
+      Across-track bin. Bin edges are across_track_edge in the calibration
+      database.
+  wavelength:
+    coordinate: true
+    description: Spectral channel, in the order of the calibration database.
+  altitude:
+    coordinate: true
+    description: Common tangent-altitude grid for the radiance and polarization.
+  reference_altitude:
+    coordinate: true
+    description: >
+      Reduced tangent-altitude grid at which geolocation and solar geometry are
+      reported.
+
+file:
+  filename_pattern: "HAWC_ALI_Radiances_L1B_{YYYYMMDD}T{HHMM}.v{version}.STD.nc"
+  description: >
+    One file is a granule: a collection of consecutive observation sets along
+    `observation_set`, for example a quarter orbit.
+
+attributes:
+  schema_version:
+    dtype: str
+    required: true
+    role: processing
+    description: Version of this schema the granule conforms to.
+
+  radiance_noise_model:
+    dtype: str
+    allowed: [none, detector]
+    required: true
+    role: processing
+    description: >
+      Which noise sources contributed to the *_noise variables. `detector` is shot,
+      read and quantization noise.
+
+variables:
+  # ------------------------------------------------------------- coordinates
+  wavelength:
+    dims: [wavelength]
+    dtype: float
+    units: nm
+    required: true
+    valid_min: 0
+    role: instrument
+    description: >
+      Nominal vacuum centre wavelength of each spectral channel, from
+      center_wavelength in the calibration database.
+
+  bandpass_fwhm:
+    dims: [wavelength]
+    dtype: float
+    units: nm
+    required: true
+    valid_min: 0
+    role: instrument
+    description: >
+      Approximate full width at half maximum of each channel's passband, from the
+      calibration database. For information only; the spectral response function
+      is in the calibration database.
+
+  altitude:
+    dims: [altitude]
+    dtype: float
+    units: m
+    required: true
+    role: geometry
+    description: >
+      Geometric (unrefracted) tangent altitude above the WGS84 ellipsoid, from
+      the calibration database.
+
+  reference_altitude:
+    dims: [reference_altitude]
+    dtype: float
+    units: m
+    required: true
+    role: geometry
+    description: >
+      Geometric tangent altitudes at which geometry is reported, from the
+      calibration database.
+
+  across_track_angle:
+    dims: [across_track]
+    dtype: float
+    units: degree
+    required: true
+    role: geometry
+    description: >
+      Centre of each across-track bin in pixel_azimuth_angle (the field angle
+      across the image, relative to the boresight).
+
+  # ---------------------------------------------------------------- measurement
+  radiance:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: W m-2 sr-1 nm-1
+    required: true
+    role: measurement
+    description: >
+      Spectral radiance (Stokes I) weighted by the channel's spectral response
+      function. NaN where
+      the altitude is outside the field of view of any analyzer.
+
+  radiance_noise:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: W m-2 sr-1 nm-1
+    required: true
+    valid_min: 0
+    role: measurement
+    description: >
+      One-sigma random-noise estimate of radiance. Only the diagonal is stored;
+      noise correlation between cells is not.
+
+  q:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: -1
+    valid_max: 1
+    role: measurement
+    description: >
+      Normalized Stokes parameter Q/I in sasktran2's StokesBasis.Observer
+      (reference direction the local vertical).
+
+  q_noise:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    role: measurement
+    description: One-sigma random-noise estimate of q.
+
+  u:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: -1
+    valid_max: 1
+    role: measurement
+    description: Normalized Stokes parameter U/I in the same frame as q.
+
+  u_noise:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    role: measurement
+    description: One-sigma random-noise estimate of u.
+
+  q_u_correlation:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: -1
+    valid_max: 1
+    role: measurement
+    description: >
+      Correlation coefficient between the noise of q and of u. Zero for ideal
+      analyzers at −60, 0 and 60 with equal noise; nonzero when the sub-images'
+      noise or analyzer_efficiency differ.
+
+  dolp:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    role: measurement
+    description: >
+      Degree of linear polarization, sqrt(q² + u²), with no bias correction.
+      Insensitive to an error common to all analyzer angles, which rotates q and
+      u together. Noise biases it upward; the expected bias for a given true
+      dolp follows from q_noise, u_noise and q_u_correlation. Can exceed 1 where
+      the noise is large.
+
+  dolp_noise:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    role: measurement
+    description: >
+      One-sigma random-noise estimate of dolp, propagated linearly from q and u.
+      Underestimates the noise where dolp is comparable to it.
+
+  # ------------------------------------------------------------------- geometry
+  time:
+    dims: [observation_set, wavelength]
+    dtype: datetime
+    required: true
+    role: geometry
+    description: Midpoint of the exposure of the frame at each spectral channel.
+
+  tangent_latitude:
+    dims: [observation_set, across_track, wavelength, reference_altitude]
+    dtype: float
+    units: degrees_north
+    required: true
+    valid_min: -90
+    valid_max: 90
+    role: geometry
+    description: >
+      WGS84 geodetic latitude of the geometric (unrefracted) tangent point at the
+      centre of the across-track bin.
+
+  tangent_longitude:
+    dims: [observation_set, across_track, wavelength, reference_altitude]
+    dtype: float
+    units: degrees_east
+    required: true
+    role: geometry
+    description: WGS84 longitude of the geometric tangent point.
+
+  spacecraft_latitude:
+    dims: [observation_set, wavelength]
+    dtype: float
+    units: degrees_north
+    required: true
+    valid_min: -90
+    valid_max: 90
+    role: geometry
+    description: WGS84 geodetic latitude of the observer.
+
+  spacecraft_longitude:
+    dims: [observation_set, wavelength]
+    dtype: float
+    units: degrees_east
+    required: true
+    role: geometry
+    description: WGS84 longitude of the observer.
+
+  spacecraft_altitude:
+    dims: [observation_set, wavelength]
+    dtype: float
+    units: m
+    required: true
+    role: geometry
+    description: Altitude of the observer above the WGS84 ellipsoid.
+
+  solar_zenith_angle:
+    dims: [observation_set, across_track, wavelength, reference_altitude]
+    dtype: float
+    units: degree
+    required: true
+    valid_min: 0
+    valid_max: 180
+    role: geometry
+    description: Solar zenith angle at the tangent point.
+
+  relative_solar_azimuth_angle:
+    dims: [observation_set, across_track, wavelength, reference_altitude]
+    dtype: float
+    units: degree
+    required: true
+    valid_min: -180
+    valid_max: 180
+    role: geometry
+    description: >
+      Solar azimuth minus line-of-sight azimuth at the tangent point, wrapped to
+      [-180, 180). 0 is forward scatter (looking towards the sun); ±180 is
+      backscatter.
+
+  los_azimuth_angle:
+    dims: [observation_set, across_track, wavelength, reference_altitude]
+    dtype: float
+    units: degree
+    required: true
+    valid_min: 0
+    valid_max: 360
+    role: geometry
+    description: >
+      Azimuth of the line of sight (direction from the observer through the tangent
+      point) at the tangent point, clockwise from true north (0 north, 90 east),
+      wrapped to [0, 360).
+
+  # -------------------------------------------------------------------- quality
+  saturated_fraction:
+    dims: [observation_set, across_track, wavelength, altitude]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    valid_max: 1
+    role: quality
+    description: >
+      Fraction of the L1A pixels contributing to the cell, over all analyzers,
+      that saturated. Cells with a value above 0 should be excluded from
+      retrievals; their values are still finite.
+
+constraints:
+  - id: time-increasing
+    rule: >
+      time is strictly increasing along wavelength within an observation set,
+      and from the last frame of one set to the first frame of the next.
+  - id: grid-increasing
+    rule: altitude, reference_altitude and across_track_angle are strictly increasing.
+  - id: grid-matches-calibration
+    rule: >
+      wavelength, bandpass_fwhm, altitude and reference_altitude equal the values
+      in the calibration database used to process the granule.
+  - id: finite-together
+    rule: >
+      radiance, q, u, dolp, their noise and q_u_correlation are either all
+      finite or all NaN in each cell. Geometry variables are finite everywhere.
+  - id: dolp-consistent
+    rule: dolp equals sqrt(q² + u²) wherever they are finite.
+
+open_questions: []
