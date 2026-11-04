@@ -1,0 +1,420 @@
+product: CAL_DB
+schema_version: 0.1.0
+status: draft
+description: >
+  ALI calibration database: the parameters of the simple instrument forward model,
+  which maps polarized spectral radiance to the L1A detector frame, and the
+  settings of the L1A→L1B processing that inverts it.
+
+model:
+  forward: |
+    The signal of detector pixel p = (r, c), in counts, for an L1A frame at
+    spectral channel w with exposure time t:
+
+      S_p = D_p + (t / g) · E_p · T_k(w) · Φ_w(p)
+
+      Φ_w(p) = ∫ τ_w(λ) · (λ / h c) · [ I(λ) + a_p,w · Q(λ) + b_p,w · U(λ) ] dλ
+
+    where
+      k        pixel_analyzer(p): the sub-image the pixel belongs to
+      I, Q, U  Stokes components of the spectral radiance along the pixel's
+               line of sight [W m-2 sr-1 nm-1]
+      D_p      dark signal [count]; in the forward model
+               D_p = dark_offset + t · dark_current
+      g        detector_gain [electrons per count]
+      E_p      pixel_etendue [m2 sr]
+      T_k(w)   analyzer_transmission: transmission of analyzer k for
+               unpolarized light (Mueller element m00)
+      τ_w      spectral_throughput: filter × optics × quantum efficiency
+      λ / h c  photons per joule
+      a, b     q_sensitivity and u_sensitivity: the pixel's normalized Mueller
+               elements m01/m00 and m02/m00, in the instrument frame
+
+    a and b are taken as constant across the channel passband.
+
+    Stokes frame. Q and U are in sasktran2's StokesBasis.Observer, referred to
+    the local vertical. q_sensitivity and u_sensitivity are in the instrument
+    frame (reference direction the instrument up axis); a boresight roll ρ
+    rotates them into the Stokes frame:
+      a' = a cos 2ρ + b sin 2ρ,   b' = −a sin 2ρ + b cos 2ρ
+    The small rotation of the frame across the field of view is ignored.
+    For an ideal analyzer at angle θ from the up axis, a = cos 2θ, b = sin 2θ.
+
+    Band average. L1B reports the photon-weighted band average
+      X_w = ∫ τ_w(λ) λ X(λ) dλ / ∫ τ_w(λ) λ dλ,   X = I, Q, U
+    so the spectral response function of channel w is τ_w(λ)·λ, normalized.
+    In terms of it, Φ_w(p) = Λ_w · (I_w + a·Q_w + b·U_w) with
+    Λ_w = ∫ τ_w(λ) λ dλ / h c.
+
+    Line of sight. A pixel looks along
+      normalize( b + tan(α)·x + tan(β)·y )
+    where b is the boresight from L1A, y and x are the instrument up and right
+    axes after the roll ρ, and α and β are pixel_azimuth_angle and
+    pixel_elevation_angle.
+
+    Detector. Each exposure has Poisson shot noise on the signal and dark
+    electrons, Gaussian read noise σ_read, and is quantized to integer counts.
+    A pixel saturates at detector_full_well electrons or at the ADC maximum,
+    2^detector_adc_bits − 1 counts, whichever is lower.
+  inverse: |
+    L1A→L1B. Blank frames are skipped. For each frame:
+      1. Subtract the dark estimate D_p, then divide by
+         (t / g) · E_p · T_k(w) · Λ_w. Each pixel is now
+           m_p = I_w + a'_p · Q_w + b'_p · U_w
+         in radiance units. Its variance is propagated from
+           var(S_p) = (S_p − o_p) / g + (σ_read / g)² + 1/12
+         (counts², with o_p = dark_offset), divided by the number of averaged
+         exposures.
+      2. Ray-trace every pixel's line of sight to its tangent point, giving its
+         tangent altitude z_p. The sun position, for the solar angles, is
+         computed from the L1A time.
+      3. For each across-track bin j (pixel_azimuth_angle between
+         across_track_edge[j] and across_track_edge[j+1]) and analyzer k,
+         resample onto the altitude grid z_i with a triangular kernel in
+         tangent altitude, w_pi = max(0, 1 − |z_p − z_i| / h) for
+         h = altitude_kernel_half_width:
+           m_ijk = Σ_p w_pi m_p / Σ_p w_pi
+         The same weights resample a'_p and b'_p, and the variances as
+         Σ w² var / (Σ w)². Because each pixel has its own tangent altitude,
+         the curvature of lines of constant tangent altitude across the image
+         is handled exactly. Cells with Σ w = 0 are NaN.
+      4. For each cell, solve the analyzer equations
+           m_ijk = I + a'_ijk Q + b'_ijk U
+         for I, Q and U by weighted least squares (exact for three analyzers),
+         with their 3 × 3 covariance. Then radiance = I, q = Q/I, u = U/I,
+         dolp = sqrt(q² + u²), and their noise and the q–u correlation follow
+         by linear propagation.
+    The kernel correlates the noise of neighbouring altitude cells; L1B does
+    not record that correlation.
+
+dimensions:
+  detector_row:
+    description: Detector row; matches detector_row in L1A.
+  detector_column:
+    description: Detector column; matches detector_column in L1A.
+  analyzer:
+    description: Polarization sub-image; one per analyzer, nominally three.
+  spectral_channel:
+    description: >
+      Spectral channel (filter-wheel position other than the blank); indexed by
+      spectral_channel in L1A.
+  throughput_wavelength:
+    coordinate: true
+    description: Grid on which spectral_throughput is tabulated.
+  altitude:
+    coordinate: true
+    description: L1B tangent-altitude grid; matches altitude in L1B.
+  reference_altitude:
+    coordinate: true
+    description: >
+      L1B reference altitudes at which geometry is reported; matches
+      reference_altitude in L1B.
+  across_track_edge:
+    description: Boundaries of the L1B across-track bins; len(across_track) + 1.
+
+attributes:
+  schema_version:
+    dtype: str
+    required: true
+    role: processing
+    description: Version of this schema the database conforms to.
+
+  valid_from:
+    dtype: str
+    required: true
+    role: processing
+    description: >
+      Start of the period this calibration applies to, as an ISO 8601 UTC
+      timestamp.
+
+  valid_to:
+    dtype: str
+    required: false
+    role: processing
+    description: >
+      End of the period this calibration applies to, as an ISO 8601 UTC timestamp.
+      Absent means open-ended.
+
+variables:
+  # ---------------------------------------------------------------- sub-images
+  pixel_analyzer:
+    dims: [detector_row, detector_column]
+    dtype: int
+    units: "1"
+    required: true
+    valid_min: -1
+    role: instrument
+    description: >
+      Index of the analyzer (sub-image) each pixel belongs to; −1 for pixels in
+      the gaps between sub-images, which are not used.
+
+  # --------------------------------------------------------------- polarization
+  q_sensitivity:
+    dims: [spectral_channel, detector_row, detector_column]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: -1
+    valid_max: 1
+    role: instrument
+    description: >
+      Normalized Mueller element m01/m00 of each pixel at each spectral channel:
+      its response to Q relative to I, in the instrument frame. cos 2θ for an
+      ideal analyzer at angle θ from the instrument up axis. NaN for pixels with
+      pixel_analyzer = −1.
+
+  u_sensitivity:
+    dims: [spectral_channel, detector_row, detector_column]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: -1
+    valid_max: 1
+    role: instrument
+    description: >
+      Normalized Mueller element m02/m00 of each pixel at each spectral channel:
+      its response to U relative to I. sin 2θ for an ideal analyzer. NaN for
+      pixels with pixel_analyzer = −1.
+
+  analyzer_transmission:
+    dims: [spectral_channel, analyzer]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    valid_max: 1
+    role: instrument
+    description: >
+      Transmission of each analyzer for unpolarized light (Mueller element m00)
+      at each spectral channel; about half the polarizer's principal
+      transmission.
+
+  # ------------------------------------------------------------------- pointing
+  pixel_elevation_angle:
+    dims: [detector_row, detector_column]
+    dtype: float
+    units: degree
+    required: true
+    role: instrument
+    description: >
+      Field angle of each pixel along the instrument up axis, relative to the
+      boresight. The same scene point has the same field angles in every
+      sub-image. NaN for pixels with pixel_analyzer = −1.
+
+  pixel_azimuth_angle:
+    dims: [detector_row, detector_column]
+    dtype: float
+    units: degree
+    required: true
+    role: instrument
+    description: >
+      Field angle of each pixel along the instrument right axis, relative to the
+      boresight. NaN for pixels with pixel_analyzer = −1.
+
+  # ----------------------------------------------------------------- radiometry
+  pixel_etendue:
+    dims: [detector_row, detector_column]
+    dtype: float
+    units: m2 sr
+    required: true
+    valid_min: 0
+    role: instrument
+    description: >
+      Effective etendue of each pixel, including the flat field, vignetting and
+      the wavelength-independent part of the optical efficiency. NaN for pixels
+      with pixel_analyzer = −1.
+
+  spectral_throughput:
+    dims: [spectral_channel, throughput_wavelength]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    valid_max: 1
+    role: instrument
+    description: >
+      Wavelength-dependent throughput of each channel: filter transmission times
+      the spectral shape of the optics and the detector quantum efficiency. Zero
+      outside the tabulated range. Its normalized product with wavelength is the
+      channel's spectral response function.
+
+  throughput_wavelength:
+    dims: [throughput_wavelength]
+    dtype: float
+    units: nm
+    required: true
+    valid_min: 0
+    role: instrument
+    description: Vacuum wavelengths at which spectral_throughput is tabulated.
+
+  center_wavelength:
+    dims: [spectral_channel]
+    dtype: float
+    units: nm
+    required: true
+    valid_min: 0
+    role: instrument
+    description: >
+      Nominal vacuum centre wavelength of each spectral channel, a label for the
+      channel. Becomes `wavelength` in L1B.
+
+  bandpass_fwhm:
+    dims: [spectral_channel]
+    dtype: float
+    units: nm
+    required: true
+    valid_min: 0
+    role: instrument
+    description: >
+      Approximate full width at half maximum of each channel, for information.
+      Processing uses spectral_throughput.
+
+  # ------------------------------------------------------------------- detector
+  dark_offset:
+    dims: [detector_row, detector_column]
+    dtype: float
+    units: count
+    required: true
+    role: instrument
+    open_questions: [dark-model]
+    description: >
+      Signal of each pixel at zero exposure time (bias). Used by the forward
+      model and by the shot-noise estimate.
+
+  dark_current:
+    dims: [detector_row, detector_column]
+    dtype: float
+    units: count s-1
+    required: false
+    default: 0.0
+    valid_min: 0
+    role: instrument
+    open_questions: [dark-model]
+    description: Dark signal rate of each pixel.
+
+  detector_gain:
+    dims: []
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    role: instrument
+    description: Electrons per count.
+
+  detector_read_noise:
+    dims: []
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    role: instrument
+    description: RMS read noise per exposure, in electrons.
+
+  detector_full_well:
+    dims: []
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    role: instrument
+    description: Full-well capacity, in electrons.
+
+  detector_adc_bits:
+    dims: []
+    dtype: int
+    units: "1"
+    required: true
+    valid_min: 1
+    role: instrument
+    description: ADC resolution.
+
+  # ---------------------------------------------------------- L1B output grid
+  altitude:
+    dims: [altitude]
+    dtype: float
+    units: m
+    required: true
+    role: processing
+    description: >
+      Tangent-altitude grid of the L1B radiances, for example 0 to 50 km in
+      250 m steps.
+
+  altitude_kernel_half_width:
+    dims: []
+    dtype: float
+    units: m
+    required: true
+    valid_min: 0
+    role: processing
+    description: >
+      Half-width h of the triangular kernel that resamples pixels onto the
+      altitude grid. At least the larger of the grid spacing and the pixels'
+      tangent-altitude spacing, so that no cell inside the field of view is
+      empty.
+
+  reference_altitude:
+    dims: [reference_altitude]
+    dtype: float
+    units: m
+    required: true
+    role: processing
+    description: >
+      Tangent altitudes at which L1B reports geolocation and solar geometry.
+
+  across_track_edge:
+    dims: [across_track_edge]
+    dtype: float
+    units: degree
+    required: true
+    role: processing
+    description: >
+      Boundaries of the L1B across-track bins in pixel_azimuth_angle. Pixels
+      outside every bin are not used.
+
+constraints:
+  - id: analyzer-pixels
+    rule: >
+      pixel_analyzer is −1 or a valid analyzer index, and every analyzer has at
+      least one pixel.
+  - id: pixel-calibration-finite
+    rule: >
+      pixel_elevation_angle, pixel_azimuth_angle, pixel_etendue, q_sensitivity
+      and u_sensitivity are finite at every pixel with pixel_analyzer ≥ 0, and
+      pixel_etendue is greater than 0 there.
+  - id: mueller-physical
+    rule: >
+      q_sensitivity² + u_sensitivity² ≤ 1 at every pixel, as required for a
+      physical diattenuator.
+  - id: demodulable
+    rule: >
+      For every spectral channel and across-track bin, the matrix with one row
+      [1, a, b] per analyzer, using that analyzer's mean q_sensitivity and
+      u_sensitivity in the bin, has full column rank and a condition number
+      below a threshold set by the validator. This needs at least three
+      analyzers at distinct angles.
+  - id: throughput-valid
+    rule: >
+      throughput_wavelength is strictly increasing, and every channel's
+      spectral_throughput is greater than 0 somewhere and contains its
+      center_wavelength within the range where it is greater than 0.
+  - id: grid-increasing
+    rule: altitude, reference_altitude and across_track_edge are strictly increasing.
+  - id: reference-within-grid
+    rule: Every reference_altitude lies within the range of altitude.
+  - id: across-track-coverage
+    rule: Every across-track bin contains pixels of every analyzer.
+
+open_questions:
+  - id: dark-model
+    question: >
+      How is the dark estimate D_p for each frame derived from the blank
+      frames, and what does the calibration database need to hold for it?
+    context: >
+      The likely operation is a blank frame between observation sets, with the
+      dark for each frame in the set interpolated in detector temperature
+      between the bracketing blanks. That needs detector_temperature in L1A
+      and possibly a per-pixel temperature or exposure-time coefficient here.
+      The processing takes D_p as an input, so the method can change without
+      changing the rest of L1A→L1B. Until it is decided, D_p comes from
+      dark_offset and dark_current. The dark estimate's own noise is not yet
+      included in the propagated noise.

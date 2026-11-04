@@ -88,6 +88,16 @@ variables:
     role: acquisition
     description: Number of equal exposures averaged into the frame.
 
+  detector_temperature:
+    dims: [time]
+    dtype: float
+    units: K
+    required: false
+    role: acquisition
+    description: >
+      Detector temperature during the frame, for interpolating the dark signal
+      between blank frames.
+
   # ------------------------------------------------------------------- geometry
   time:
     dims: [time]
