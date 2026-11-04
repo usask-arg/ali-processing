@@ -308,10 +308,12 @@ variables:
       retrievals; their values are still finite.
 
 constraints:
-  - id: time-increasing
+  - id: time-ordered
     rule: >
-      time is strictly increasing along wavelength within an observation set,
-      and from the last frame of one set to the first frame of the next.
+      Within an observation set the times are distinct, and every time in a set
+      is later than every time in the previous set. Times need not increase
+      along wavelength, which follows the calibration database rather than the
+      filter-wheel order.
   - id: grid-increasing
     rule: altitude, reference_altitude and across_track_angle are strictly increasing.
   - id: grid-matches-calibration
