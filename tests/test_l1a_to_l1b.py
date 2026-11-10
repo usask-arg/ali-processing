@@ -201,7 +201,7 @@ def test_invalid_l1a_is_rejected(small_cal_db, limb_scene, make_frames):
 
 
 def test_l1b_image_for_l2(noiseless_l1b):
-    image = L1bImage.from_l1b(noiseless_l1b, 0, 2, max_dolp_noise=np.inf)
+    image = L1bImage.from_l1b(noiseless_l1b, 0, 2)
     assert set(image.spectra) == {"I", "dolp"}
     for spectra in image.spectra.values():
         ds = spectra.ds
@@ -220,7 +220,7 @@ def test_l1b_image_for_l2(noiseless_l1b):
 def test_l1b_image_drops_altitudes_outside_the_field_of_view(noiseless_l1b):
     l1b = noiseless_l1b.copy(deep=True)
     l1b["radiance"][0, 2, 1, :3] = np.nan
-    image = L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=np.inf)
+    image = L1bImage.from_l1b(l1b, 0, 2)
     tangent_altitude = image.spectra["I"].ds["tangent_altitude"]
     assert float(tangent_altitude.min()) == 3e3
     assert tangent_altitude.size == 48
@@ -236,7 +236,7 @@ def test_l1b_image_handles_wrapping_angles(noiseless_l1b):
     l1b["tangent_longitude"][:] = 179.8 * alternating
     l1b["los_azimuth_angle"][:] = np.where(alternating > 0, 359.6, 0.4)
 
-    ds = L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=np.inf).spectra["I"].ds
+    ds = L1bImage.from_l1b(l1b, 0, 2).spectra["I"].ds
     assert np.all(np.abs(ds["relative_solar_azimuth_angle"]) > 179)
     assert np.all(np.abs(ds["tangent_longitude"]) > 179)
     los_azimuth = ds["los_azimuth_angle"].to_numpy()
@@ -327,9 +327,12 @@ def test_low_dolp_keeps_all_radiance(small_cal_db, make_frames):
     assert (image.spectra["dolp"].ds["radiance_noise"] == IGNORED_NOISE).any()
 
 
-def test_dolp_noise_threshold_is_required(noiseless_l1b):
-    with pytest.raises(TypeError, match="max_dolp_noise"):
-        L1bImage.from_l1b(noiseless_l1b, 0, 2)
+def test_dolp_is_passed_on_unchanged_by_default(noiseless_l1b):
+    cell = noiseless_l1b.isel(observation_set=0, across_track=2)
+    noise = L1bImage.from_l1b(noiseless_l1b, 0, 2).spectra["dolp"].ds["radiance_noise"]
+    np.testing.assert_allclose(
+        noise, cell["dolp_noise"].transpose("wavelength", "altitude")
+    )
 
 
 def test_l1b_image_drops_saturated_altitudes(small_cal_db, limb_scene, make_frames):
@@ -343,11 +346,7 @@ def test_l1b_image_drops_saturated_altitudes(small_cal_db, limb_scene, make_fram
     ).any("wavelength")
     assert saturated.any()
 
-    tangent_altitude = (
-        L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=np.inf)
-        .spectra["I"]
-        .ds["tangent_altitude"]
-    )
+    tangent_altitude = L1bImage.from_l1b(l1b, 0, 2).spectra["I"].ds["tangent_altitude"]
     np.testing.assert_array_equal(tangent_altitude, l1b["altitude"][~saturated])
 
 

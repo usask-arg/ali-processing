@@ -87,7 +87,7 @@ class L1bImage(Observation):
         observation_set: int,
         across_track: int,
         *,
-        max_dolp_noise: float,
+        max_dolp_noise: float | None = None,
         low_alt=0,
         high_alt=100000,
     ) -> L1bImage:
@@ -98,14 +98,14 @@ class L1bImage(Observation):
         are finite and no pixel saturated.
 
         Noise biases dolp upward, by about dolp_noise² / (2 dolp), which L2 does
-        not model. In each channel and altitude where dolp_noise exceeds
-        ``max_dolp_noise``, it is set to ``IGNORED_NOISE`` so that L2 effectively
-        ignores that dolp, while the radiance is kept. Deciding cell by cell lets
-        a channel that is dark low in the limb, such as one in a water band, keep
-        its dolp higher up and leaves the other channels alone. The decision uses
-        only the noise estimate, not the measured dolp, so it is not driven by
-        the noise in dolp itself. The threshold depends on the retrieval and has
-        no default.
+        not model yet. By default dolp is passed on as it is. Given
+        ``max_dolp_noise``, each channel and altitude where dolp_noise exceeds it
+        has its dolp_noise set to ``IGNORED_NOISE``, so that L2 effectively
+        ignores that dolp while keeping the radiance. Deciding cell by cell lets a
+        channel that is dark low in the limb keep its dolp higher up, and the
+        decision uses only the noise estimate, not the measured dolp. This is off
+        by default because ignoring the top dolp weakens the constraint on median
+        radius in the current L2 retrieval; handling the bias belongs in L2.
 
         The geometry, reported at the reference altitudes, is interpolated to each
         altitude and averaged over the channels, which are observed seconds apart.
@@ -120,7 +120,10 @@ class L1bImage(Observation):
         altitude = cell["altitude"].to_numpy()
 
         dolp_noise = cell["dolp_noise"].transpose("wavelength", "altitude").to_numpy()
-        dolp_noise = np.where(dolp_noise > max_dolp_noise, IGNORED_NOISE, dolp_noise)
+        if max_dolp_noise is not None:
+            dolp_noise = np.where(
+                dolp_noise > max_dolp_noise, IGNORED_NOISE, dolp_noise
+            )
 
         reference_altitude = cell["reference_altitude"].to_numpy()
 
