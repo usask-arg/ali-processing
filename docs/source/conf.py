@@ -15,6 +15,18 @@ github_url = 'https://github.com/usask-arg/ali-processing'
 from importlib.metadata import version as get_version
 
 release: str = get_version(project)
+
+# -- Data format pages, generated from the YAML schemas in aliprocessing.schemas
+from pathlib import Path
+
+from aliprocessing.schemas import PRODUCTS, load_schema, render_markdown
+
+_format_pages = Path(__file__).parent / "formats" / "generated"
+_format_pages.mkdir(parents=True, exist_ok=True)
+for _product in PRODUCTS:
+    (_format_pages / f"{_product}.md").write_text(
+        render_markdown(load_schema(_product)), encoding="utf-8"
+    )
 # for example take major/minor
 version: str = ".".join(release.split('.')[:2])
 
