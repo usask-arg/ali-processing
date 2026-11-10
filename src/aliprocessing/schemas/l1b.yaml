@@ -130,12 +130,11 @@ variables:
     dtype: float
     units: "1"
     required: true
-    valid_min: -1
-    valid_max: 1
     role: measurement
     description: >
       Normalized Stokes parameter Q/I in sasktran2's StokesBasis.Observer
-      (reference direction the local vertical).
+      (reference direction the local vertical). Can lie outside [-1, 1] where
+      the noise is large.
 
   q_noise:
     dims: [observation_set, across_track, wavelength, altitude]
@@ -151,10 +150,10 @@ variables:
     dtype: float
     units: "1"
     required: true
-    valid_min: -1
-    valid_max: 1
     role: measurement
-    description: Normalized Stokes parameter U/I in the same frame as q.
+    description: >
+      Normalized Stokes parameter U/I in the same frame as q. Can lie outside
+      [-1, 1] where the noise is large.
 
   u_noise:
     dims: [observation_set, across_track, wavelength, altitude]

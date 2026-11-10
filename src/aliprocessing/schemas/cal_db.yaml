@@ -33,12 +33,14 @@ model:
     a and b are taken as constant across the channel passband.
 
     Stokes frame. Q and U are in sasktran2's StokesBasis.Observer, referred to
-    the local vertical. q_sensitivity and u_sensitivity are in the instrument
-    frame (reference direction the instrument up axis); a boresight roll ρ
-    rotates them into the Stokes frame:
-      a' = a cos 2ρ + b sin 2ρ,   b' = −a sin 2ρ + b cos 2ρ
+    the local vertical, with polarization angles increasing from the vertical
+    towards the observer's right. q_sensitivity and u_sensitivity are in the
+    instrument frame: reference direction the instrument up axis, angles
+    increasing towards the instrument right axis. For an ideal analyzer at angle
+    θ, a = cos 2θ and b = sin 2θ. A boresight roll ρ turns the up axis ρ
+    clockwise from the vertical, so the analyzer is at θ + ρ in the Stokes frame:
+      a' = a cos 2ρ − b sin 2ρ,   b' = a sin 2ρ + b cos 2ρ
     The small rotation of the frame across the field of view is ignored.
-    For an ideal analyzer at angle θ from the up axis, a = cos 2θ, b = sin 2θ.
 
     Band average. L1B reports the photon-weighted band average
       X_w = ∫ τ_w(λ) λ X(λ) dλ / ∫ τ_w(λ) λ dλ,   X = I, Q, U
@@ -70,14 +72,17 @@ model:
          computed from the L1A time.
       3. For each across-track bin j (pixel_azimuth_angle between
          across_track_edge[j] and across_track_edge[j+1]) and analyzer k,
-         resample onto the altitude grid z_i with a triangular kernel in
-         tangent altitude, w_pi = max(0, 1 − |z_p − z_i| / h) for
-         h = altitude_kernel_half_width:
-           m_ijk = Σ_p w_pi m_p / Σ_p w_pi
-         The same weights resample a'_p and b'_p, and the variances as
-         Σ w² var / (Σ w)². Because each pixel has its own tangent altitude,
-         the curvature of lines of constant tangent altitude across the image
-         is handled exactly. Cells with Σ w = 0 are NaN.
+         resample onto the altitude grid z_i by local-linear regression in
+         tangent altitude: fit a straight line to the pixels within
+         h = altitude_kernel_half_width of z_i, weighted by the triangular
+         kernel w_pi = 1 − |z_p − z_i| / h, and evaluate it at z_i. This is
+         linear in the pixels, m_ijk = Σ_p ℓ_pi m_p with Σ_p ℓ_pi = 1, and has
+         no first-order bias when the pixel altitudes are unevenly spread
+         around z_i. The same ℓ resample a'_p and b'_p, and the variances as
+         Σ ℓ² var. Because each pixel has its own tangent altitude, the
+         curvature of lines of constant tangent altitude across the image is
+         handled exactly. Cells without pixels on both sides of z_i within h
+         would be extrapolated and are NaN.
       4. For each cell, solve the analyzer equations
            m_ijk = I + a'_ijk Q + b'_ijk U
          for I, Q and U by weighted least squares (exact for three analyzers),
@@ -171,6 +176,7 @@ variables:
     valid_min: -1
     valid_max: 1
     role: instrument
+    open_questions: [u-sign]
     description: >
       Normalized Mueller element m02/m00 of each pixel at each spectral channel:
       its response to U relative to I. sin 2θ for an ideal analyzer. NaN for
@@ -405,6 +411,16 @@ constraints:
     rule: Every across-track bin contains pixels of every analyzer.
 
 open_questions:
+  - id: u-sign
+    question: >
+      Does sasktran2's StokesBasis.Observer have U > 0 for polarization rotated
+      from the vertical towards the observer's right, as this model assumes?
+    context: >
+      The forward model and L1A→L1B share this convention, so they are
+      consistent with each other either way. If sasktran2's U has the opposite
+      sign, L1B u (and the sign of u_sensitivity) must be flipped to match L2.
+      radiance, q and dolp are unaffected. To be settled with a sasktran2
+      single-scatter calculation of a known geometry.
   - id: dark-model
     question: >
       How is the dark estimate D_p for each frame derived from the blank
