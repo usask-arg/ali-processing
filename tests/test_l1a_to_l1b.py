@@ -197,7 +197,7 @@ def test_invalid_l1a_is_rejected(small_cal_db, limb_scene, make_frames):
 
 
 def test_l1b_image_for_l2(noiseless_l1b):
-    image = L1bImage.from_l1b(noiseless_l1b, 0, 2)
+    image = L1bImage.from_l1b(noiseless_l1b, 0, 2, min_dolp_snr=0)
     assert set(image.spectra) == {"I", "dolp"}
     for spectra in image.spectra.values():
         ds = spectra.ds
@@ -216,7 +216,7 @@ def test_l1b_image_for_l2(noiseless_l1b):
 def test_l1b_image_drops_altitudes_outside_the_field_of_view(noiseless_l1b):
     l1b = noiseless_l1b.copy(deep=True)
     l1b["radiance"][0, 2, 1, :3] = np.nan
-    image = L1bImage.from_l1b(l1b, 0, 2)
+    image = L1bImage.from_l1b(l1b, 0, 2, min_dolp_snr=0)
     tangent_altitude = image.spectra["I"].ds["tangent_altitude"]
     assert float(tangent_altitude.min()) == 3e3
     assert tangent_altitude.size == 48
@@ -232,7 +232,7 @@ def test_l1b_image_handles_wrapping_angles(noiseless_l1b):
     l1b["tangent_longitude"][:] = 179.8 * alternating
     l1b["los_azimuth_angle"][:] = np.where(alternating > 0, 359.6, 0.4)
 
-    ds = L1bImage.from_l1b(l1b, 0, 2).spectra["I"].ds
+    ds = L1bImage.from_l1b(l1b, 0, 2, min_dolp_snr=0).spectra["I"].ds
     assert np.all(np.abs(ds["relative_solar_azimuth_angle"]) > 179)
     assert np.all(np.abs(ds["tangent_longitude"]) > 179)
     los_azimuth = ds["los_azimuth_angle"].to_numpy()
@@ -266,3 +266,83 @@ def test_granule_of_blank_frames_is_rejected(small_cal_db, limb_scene, make_fram
     l1a = simulate_l1a(small_cal_db, limb_scene, blank, noise=False)
     with pytest.raises(ValueError, match="no observation sets"):
         process_l1a_to_l1b(l1a, small_cal_db)
+
+
+def test_l1b_image_keeps_dolp_only_where_it_is_well_above_its_noise(noiseless_l1b):
+    cell = noiseless_l1b.isel(observation_set=0, across_track=2)
+    snr = (cell["dolp"] / cell["dolp_noise"]).min("wavelength")
+    tangent_altitude = (
+        L1bImage.from_l1b(noiseless_l1b, 0, 2).spectra["dolp"].ds["tangent_altitude"]
+    )
+    np.testing.assert_array_equal(tangent_altitude, cell["altitude"][snr >= 3])
+    # The faint top of the limb is cut; the small test instrument is noisy there
+    assert 30e3 < float(tangent_altitude.max()) < 40e3
+
+
+def test_l1b_image_drops_saturated_altitudes(small_cal_db, limb_scene, make_frames):
+    exposure = 10 * exposure_for_fill(small_cal_db, limb_scene)
+    l1a = simulate_l1a(
+        small_cal_db, limb_scene, make_frames(exposure_time=exposure), noise=False
+    )
+    l1b = process_l1a_to_l1b(l1a, small_cal_db)
+    saturated = (
+        l1b["saturated_fraction"].isel(observation_set=0, across_track=2) > 0
+    ).any("wavelength")
+    assert saturated.any()
+
+    tangent_altitude = (
+        L1bImage.from_l1b(l1b, 0, 2, min_dolp_snr=0).spectra["I"].ds["tangent_altitude"]
+    )
+    np.testing.assert_array_equal(tangent_altitude, l1b["altitude"][~saturated])
+
+
+def test_no_gaps_inside_the_field_of_view(limb_scene, make_frames):
+    # One column per across-track bin, so the arc cannot fill in between rows:
+    # the kernel alone must span the widest row spacing, at the bottom of the
+    # coverage
+    sparse = SimpleInstrument(
+        **{**SMALL_INSTRUMENT_KWARGS, "num_columns": 4, "horizontal_ifov_deg": 0.8}
+    )
+    cal_db = simulated_cal_db(sparse)
+    frames = make_frames()
+    l1b = process_l1a_to_l1b(
+        simulate_l1a(cal_db, limb_scene, frames, noise=False), cal_db
+    )
+    assert np.isfinite(l1b["radiance"]).all()
+
+
+def test_invalid_cal_db_is_rejected(small_cal_db, limb_scene, make_frames):
+    l1a = simulate_l1a(small_cal_db, limb_scene, make_frames(), noise=False)
+    broken = small_cal_db.copy(deep=True)
+    broken["pixel_etendue"][0, 0] = np.nan
+    with pytest.raises(SchemaValidationError, match="pixel-calibration-finite"):
+        process_l1a_to_l1b(l1a, broken)
+
+
+def test_non_finite_dark_pixels_are_left_out(small_cal_db, limb_scene, make_frames):
+    l1a = simulate_l1a(small_cal_db, limb_scene, make_frames(), noise=False)
+    reference = process_l1a_to_l1b(l1a, small_cal_db)
+
+    def dark_with_a_bad_pixel(frame, cal_db):
+        dark = static_dark(frame, cal_db)
+        dark[20, 10] = np.nan
+        return dark
+
+    l1b = process_l1a_to_l1b(l1a, small_cal_db, dark=dark_with_a_bad_pixel)
+    # One pixel out of each cell's many: still finite, and barely changed
+    assert np.isfinite(l1b["radiance"]).all()
+    np.testing.assert_allclose(l1b["radiance"], reference["radiance"], rtol=0.02)
+
+
+def test_four_analyzers(limb_scene, make_frames):
+    four = SimpleInstrument(
+        **{**SMALL_INSTRUMENT_KWARGS, "analyzer_angles_deg": (0.0, 45.0, 90.0, 135.0)}
+    )
+    cal_db = simulated_cal_db(four)
+    l1b = process_l1a_to_l1b(
+        simulate_l1a(cal_db, limb_scene, make_frames(), noise=False), cal_db
+    )
+    finite = np.isfinite(l1b["q"])
+    assert finite.any()
+    np.testing.assert_allclose(l1b["q"].to_numpy()[finite], Q, rtol=1e-9)
+    np.testing.assert_allclose(l1b["u"].to_numpy()[finite], U, rtol=1e-9)

@@ -18,7 +18,7 @@ from aliprocessing.instrument import (
     rotate_sensitivities,
     saturation_counts,
 )
-from aliprocessing.schemas import apply_metadata
+from aliprocessing.schemas import apply_metadata, check
 
 RADIANCE_UNITS = "W m-2 sr-1 nm-1"
 
@@ -39,9 +39,12 @@ def simulate_l1a(
         Calibration database.
     scene
         Band-averaged Stokes radiance ``I``, ``Q`` and ``U`` in the Stokes frame,
-        with dims (spectral_channel, altitude) and an ``altitude`` coordinate in
-        metres. Each pixel sees the scene at its tangent altitude, interpolated
-        linearly and held constant beyond the ends.
+        with dims (spectral_channel, altitude), one entry per calibration database
+        channel in its order, and an ``altitude`` coordinate in metres. Each
+        pixel sees the scene at its tangent altitude, interpolated linearly. The
+        scene must cover the altitudes L1A→L1B uses, the L1B altitude grid
+        widened by the kernel half-width; beyond its ends, which only pixels
+        that L1B ignores see, the end values are held.
     frames
         Everything L1A records about each frame except ``image`` and
         ``saturated``, for example from ``observation_sequence``.
@@ -72,6 +75,7 @@ def simulate_l1a(
         if "dark_current" in cal_db
         else np.zeros_like(offset)
     )
+    scene = _checked_scene(scene, cal_db)
     scene_altitude = scene["altitude"].to_numpy()
     stokes = {
         name: scene[name].transpose("spectral_channel", "altitude").to_numpy()
@@ -142,8 +146,40 @@ def simulate_l1a(
     )
     if seed is not None:
         simulation["noise_seed"] = ((), np.int64(seed))
-    tree = xr.DataTree.from_dict({"/": l1a, "/simulation": simulation})
-    return apply_metadata(tree, "l1a")
+    tree = apply_metadata(
+        xr.DataTree.from_dict({"/": l1a, "/simulation": simulation}), "l1a"
+    )
+    check(tree, "l1a", cal_db=cal_db)
+    return tree
+
+
+def _checked_scene(scene: xr.Dataset, cal_db: xr.Dataset) -> xr.Dataset:
+    """The scene sorted by altitude, after checking its channels and altitudes."""
+    num_channels = cal_db.sizes["spectral_channel"]
+    if scene.sizes.get("spectral_channel") != num_channels:
+        msg = (
+            f"the scene has {scene.sizes.get('spectral_channel')} spectral channels, "
+            f"the calibration database {num_channels}"
+        )
+        raise ValueError(msg)
+    scene = scene.sortby("altitude")
+    altitude = scene["altitude"].to_numpy()
+    if not np.all(np.diff(altitude) > 0):
+        msg = "scene altitudes must be distinct"
+        raise ValueError(msg)
+
+    half_width = float(cal_db["altitude_kernel_half_width"])
+    needed = (
+        float(cal_db["altitude"].min()) - half_width,
+        float(cal_db["altitude"].max()) + half_width,
+    )
+    if altitude[0] > needed[0] or altitude[-1] < needed[1]:
+        msg = (
+            f"the scene covers {altitude[0]:.0f} to {altitude[-1]:.0f} m, but "
+            f"L1A->L1B uses tangent altitudes from {needed[0]:.0f} to {needed[1]:.0f} m"
+        )
+        raise ValueError(msg)
+    return scene
 
 
 def _digitize(electrons, offset, gain, full_well, adc_max):
@@ -193,7 +229,7 @@ def observation_sequence(
     time = np.datetime64(start, "ns") + np.arange(num_frames) * interval
 
     def constant(value):
-        return ("time", np.full(num_frames, value))
+        return ("time", np.full(num_frames, value, dtype=float))
 
     frames = xr.Dataset(
         {
@@ -237,7 +273,10 @@ def exposure_for_fill(
         * gain,
     )
     grid = cal_db["altitude"].to_numpy()
-    in_grid = scene.sel(altitude=slice(grid.min(), grid.max()))
+    in_grid = _checked_scene(scene, cal_db).sel(altitude=slice(grid.min(), grid.max()))
+    if in_grid.sizes["altitude"] == 0:
+        msg = "the scene has no altitudes within the L1B altitude grid"
+        raise ValueError(msg)
     intensity = in_grid["I"].transpose("spectral_channel", "altitude").to_numpy()
     polarized = (
         np.hypot(in_grid["Q"], in_grid["U"])

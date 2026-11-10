@@ -7,7 +7,7 @@ import pytest
 from conftest import SMALL_INSTRUMENT_KWARGS
 
 from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
-from aliprocessing.forward_model import simulate_l1a
+from aliprocessing.forward_model import exposure_for_fill, simulate_l1a
 from aliprocessing.instrument import (
     PLANCK,
     SPEED_OF_LIGHT,
@@ -96,7 +96,8 @@ def test_overexposure_saturates(small_cal_db, limb_scene, make_frames):
 
 
 def test_noise_matches_the_detector_model(small_cal_db, limb_scene, make_frames):
-    frames = make_frames().isel(time=[0])
+    # One whole observation set; frame 0 is checked
+    frames = make_frames(blank_between_sets=False)
     realizations = np.stack(
         [
             simulate_l1a(small_cal_db, limb_scene, frames, seed=seed)["image"]
@@ -122,7 +123,9 @@ def test_noise_matches_the_detector_model(small_cal_db, limb_scene, make_frames)
 
 def test_averaging_exposures_reduces_noise(small_cal_db, limb_scene, make_frames):
     def pixel_scatter(num_exposures):
-        frames = make_frames(num_averaged_exposures=num_exposures).isel(time=[0])
+        frames = make_frames(
+            num_averaged_exposures=num_exposures, blank_between_sets=False
+        )
         images = np.stack(
             [
                 simulate_l1a(small_cal_db, limb_scene, frames, seed=s)["image"]
@@ -182,3 +185,40 @@ def test_vignetting_reaches_its_stated_value_at_the_corners():
     # Row 0 and the last column of the first sub-image is a corner
     corner = etendue[0, -1] / unvignetted
     assert corner == pytest.approx(1 - instrument.vignetting, rel=1e-9)
+
+
+def test_scene_altitude_order_does_not_matter(small_cal_db, limb_scene, make_frames):
+    frames = make_frames()
+    ascending = simulate_l1a(small_cal_db, limb_scene, frames, noise=False)
+    descending = simulate_l1a(
+        small_cal_db,
+        limb_scene.isel(altitude=slice(None, None, -1)),
+        frames,
+        noise=False,
+    )
+    np.testing.assert_array_equal(ascending["image"], descending["image"])
+
+
+def test_scene_must_cover_the_altitudes_l1b_uses(small_cal_db, limb_scene, make_frames):
+    short = limb_scene.sel(altitude=slice(5e3, None))
+    with pytest.raises(ValueError, match="the scene covers"):
+        simulate_l1a(small_cal_db, short, make_frames(), noise=False)
+    with pytest.raises(ValueError, match="the scene covers"):
+        exposure_for_fill(small_cal_db, short)
+
+
+def test_scene_must_have_one_entry_per_channel(small_cal_db, limb_scene, make_frames):
+    with pytest.raises(ValueError, match="spectral channels"):
+        simulate_l1a(
+            small_cal_db,
+            limb_scene.isel(spectral_channel=[0]),
+            make_frames(),
+            noise=False,
+        )
+
+
+def test_integer_positions_give_valid_l1a(small_cal_db, limb_scene, make_frames):
+    # Integer inputs are stored as floats, and the output is checked on creation
+    frames = make_frames(spacecraft_latitude=40, spacecraft_longitude=-100)
+    assert frames["spacecraft_latitude"].dtype.kind == "f"
+    simulate_l1a(small_cal_db, limb_scene, frames, noise=False)

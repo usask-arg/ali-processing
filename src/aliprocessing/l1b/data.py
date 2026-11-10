@@ -83,20 +83,27 @@ class L1bImage(Observation):
         across_track: int,
         low_alt=0,
         high_alt=100000,
+        min_dolp_snr: float = 3.0,
     ) -> L1bImage:
         """One observation set and across-track bin of an L1B granule.
 
         Gives the radiance as "I" and the degree of linear polarization as "dolp".
-        Lines of sight are the L1B altitudes where every channel is finite. The
+        Lines of sight are the L1B altitudes where, in every channel, the values
+        are finite, no pixel saturated, and dolp is at least ``min_dolp_snr`` times
+        its noise. The last condition keeps out altitudes where noise biases dolp
+        upward (by about dolp_noise² / (2 dolp)), which L2 does not model. The
         geometry, reported at the reference altitudes, is interpolated to each
         altitude and averaged over the channels, which are observed seconds apart.
         """
         cell = l1b.isel(observation_set=observation_set, across_track=across_track)
-        finite = (
-            np.isfinite(cell["radiance"]).all("wavelength")
-            & np.isfinite(cell["dolp"]).all("wavelength")
-        ).to_numpy()
-        cell = cell.isel(altitude=finite)
+        with np.errstate(invalid="ignore"):
+            usable = (
+                np.isfinite(cell["radiance"])
+                & np.isfinite(cell["dolp"])
+                & (cell["saturated_fraction"] == 0)
+                & (cell["dolp"] >= min_dolp_snr * cell["dolp_noise"])
+            ).all("wavelength")
+        cell = cell.isel(altitude=usable.to_numpy())
         altitude = cell["altitude"].to_numpy()
 
         reference_altitude = cell["reference_altitude"].to_numpy()

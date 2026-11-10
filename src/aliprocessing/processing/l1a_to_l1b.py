@@ -74,7 +74,8 @@ def process_l1a_to_l1b(
         Calibration database.
     dark
         Dark estimate for each frame, ``dark(frame, cal_db)`` in counts per pixel.
-        Defaults to the calibration database's static dark.
+        Defaults to the calibration database's static dark. Pixels where it is not
+        finite are left out of that frame.
 
     Returns
     -------
@@ -83,6 +84,7 @@ def process_l1a_to_l1b(
     """
     if isinstance(l1a, xr.DataTree):
         l1a = l1a.to_dataset(inherit=False)
+    check(cal_db, "cal_db")
     check(l1a, "l1a", cal_db=cal_db)
     layout = _PixelLayout.from_cal_db(cal_db)
 
@@ -230,16 +232,18 @@ def _process_frame(frame, channel, cal_db, layout, dark):
     looks = instrument.look_vectors(layout.azimuth, layout.elevation)
     tangent_altitude = sphere.tangent_altitude(instrument.observer, looks)
 
-    # 3. Resample each (across-track bin, analyzer) onto the altitude grid
+    # 3. Resample each (across-track bin, analyzer) onto the altitude grid,
+    # leaving out pixels without a usable value, for example from the dark model
+    good = np.isfinite(signal) & np.isfinite(variance)
     resampled = _resample(
-        tangent_altitude,
+        tangent_altitude[good],
         cal_db["altitude"].to_numpy(),
         float(cal_db["altitude_kernel_half_width"]),
-        layout.across_track_bin * layout.num_analyzers + layout.analyzer,
+        (layout.across_track_bin * layout.num_analyzers + layout.analyzer)[good],
         layout.num_bins * layout.num_analyzers,
-        {"m": signal, "a": a, "b": b},
-        variance,
-        saturated,
+        {"m": signal[good], "a": a[good], "b": b[good]},
+        variance[good],
+        saturated[good],
     )
     shape = (layout.num_bins, layout.num_analyzers, -1)
     estimate = {
@@ -354,8 +358,9 @@ def _demodulate(m, a, b, variance):
     weight = np.where(
         valid[..., np.newaxis], 1.0 / np.where(variance > 0, variance, 1.0), 1.0
     )
+    num_analyzers = design.shape[-2]
     design = np.where(
-        valid[..., np.newaxis, np.newaxis], design, np.eye(3)[: design.shape[-2]]
+        valid[..., np.newaxis, np.newaxis], design, np.eye(num_analyzers, 3)
     )
     m = np.where(valid[..., np.newaxis], m, 0.0)
 

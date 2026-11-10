@@ -114,11 +114,17 @@ class SimpleInstrument:
 
     @property
     def pixel_altitude_spacing(self) -> float:
-        """Tangent-altitude step between rows near the middle of the coverage."""
-        middle = 0.5 * sum(self.tangent_altitude_coverage)
+        """Largest tangent-altitude step between rows, at the bottom of the coverage.
+
+        Rows are furthest apart at the bottom, where the tangent point is
+        farthest away. Includes a 2% margin for the ellipsoid and for the rise of
+        tangent altitude towards the ends of each row, which this spherical
+        estimate leaves out.
+        """
+        bottom = self.tangent_altitude_coverage[0]
         observer_radius = EARTH_RADIUS + self.orbit_altitude
-        distance = np.sqrt(observer_radius**2 - (EARTH_RADIUS + middle) ** 2)
-        return float(distance * np.deg2rad(self.vertical_ifov_deg))
+        distance = np.sqrt(observer_radius**2 - (EARTH_RADIUS + bottom) ** 2)
+        return float(1.02 * distance * np.deg2rad(self.vertical_ifov_deg))
 
 
 def simulated_cal_db(
