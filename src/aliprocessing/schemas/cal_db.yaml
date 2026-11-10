@@ -41,6 +41,10 @@ model:
     clockwise from the vertical, so the analyzer is at θ + ρ in the Stokes frame:
       a' = a cos 2ρ − b sin 2ρ,   b' = a sin 2ρ + b cos 2ρ
     The small rotation of the frame across the field of view is ignored.
+    This convention, together with the L1B relative_solar_azimuth_angle, gives
+    the same Q and U signs as sasktran2 with TangentAltitudeSolar and
+    StokesBasis.Observer (checked for single Rayleigh scattering in
+    tests/test_stokes_convention.py).
 
     Band average. L1B reports the photon-weighted band average
       X_w = ∫ τ_w(λ) λ X(λ) dλ / ∫ τ_w(λ) λ dλ,   X = I, Q, U
@@ -176,7 +180,6 @@ variables:
     valid_min: -1
     valid_max: 1
     role: instrument
-    open_questions: [u-sign]
     description: >
       Normalized Mueller element m02/m00 of each pixel at each spectral channel:
       its response to U relative to I. sin 2θ for an ideal analyzer. NaN for
@@ -411,16 +414,6 @@ constraints:
     rule: Every across-track bin contains pixels of every analyzer.
 
 open_questions:
-  - id: u-sign
-    question: >
-      Does sasktran2's StokesBasis.Observer have U > 0 for polarization rotated
-      from the vertical towards the observer's right, as this model assumes?
-    context: >
-      The forward model and L1A→L1B share this convention, so they are
-      consistent with each other either way. If sasktran2's U has the opposite
-      sign, L1B u (and the sign of u_sensitivity) must be flipped to match L2.
-      radiance, q and dolp are unaffected. To be settled with a sasktran2
-      single-scatter calculation of a known geometry.
   - id: dark-model
     question: >
       How is the dark estimate D_p for each frame derived from the blank
