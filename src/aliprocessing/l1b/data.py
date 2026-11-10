@@ -98,13 +98,14 @@ class L1bImage(Observation):
         are finite and no pixel saturated.
 
         Noise biases dolp upward, by about dolp_noise² / (2 dolp), which L2 does
-        not model. From the lowest altitude where dolp_noise exceeds
-        ``max_dolp_noise`` in any channel upwards, dolp_noise is set to
-        ``IGNORED_NOISE`` so that L2 effectively ignores dolp there, while the
-        radiance at those altitudes is kept. The decision uses only the noise
-        estimate, not the measured dolp, so it is not driven by the noise in dolp
-        itself, and the de-weighted altitudes are contiguous. The threshold
-        depends on the retrieval and has no default.
+        not model. In each channel and altitude where dolp_noise exceeds
+        ``max_dolp_noise``, it is set to ``IGNORED_NOISE`` so that L2 effectively
+        ignores that dolp, while the radiance is kept. Deciding cell by cell lets
+        a channel that is dark low in the limb, such as one in a water band, keep
+        its dolp higher up and leaves the other channels alone. The decision uses
+        only the noise estimate, not the measured dolp, so it is not driven by
+        the noise in dolp itself. The threshold depends on the retrieval and has
+        no default.
 
         The geometry, reported at the reference altitudes, is interpolated to each
         altitude and averaged over the channels, which are observed seconds apart.
@@ -118,10 +119,8 @@ class L1bImage(Observation):
         cell = cell.isel(altitude=usable.to_numpy())
         altitude = cell["altitude"].to_numpy()
 
-        noisy = (cell["dolp_noise"] > max_dolp_noise).any("wavelength").to_numpy()
-        dolp_ignored = np.cumsum(noisy) > 0
         dolp_noise = cell["dolp_noise"].transpose("wavelength", "altitude").to_numpy()
-        dolp_noise = np.where(dolp_ignored, IGNORED_NOISE, dolp_noise)
+        dolp_noise = np.where(dolp_noise > max_dolp_noise, IGNORED_NOISE, dolp_noise)
 
         reference_altitude = cell["reference_altitude"].to_numpy()
 

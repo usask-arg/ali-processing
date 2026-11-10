@@ -282,30 +282,33 @@ def test_l1b_image_ignores_noisy_dolp_but_keeps_radiance(noiseless_l1b):
         np.testing.assert_array_equal(spectra.ds["tangent_altitude"], cell["altitude"])
     np.testing.assert_allclose(image.spectra["I"].ds["radiance"], cell["radiance"])
 
-    # dolp is ignored from the first altitude where its noise is too large
+    # dolp is ignored exactly where its noise is too large
+    reported = cell["dolp_noise"].transpose("wavelength", "altitude").to_numpy()
     noise = image.spectra["dolp"].ds["radiance_noise"].to_numpy()
-    noisy = (cell["dolp_noise"] > threshold).any("wavelength").to_numpy()
-    first_noisy = int(np.argmax(noisy))
-    assert 20 < first_noisy < 50
-    np.testing.assert_allclose(
-        noise[:, :first_noisy],
-        cell["dolp_noise"].transpose("wavelength", "altitude")[:, :first_noisy],
-    )
-    assert np.all(noise[:, first_noisy:] == IGNORED_NOISE)
+    noisy = reported > threshold
+    assert noisy.any()
+    assert not noisy.all()
+    assert np.all(noise[noisy] == IGNORED_NOISE)
+    np.testing.assert_allclose(noise[~noisy], reported[~noisy])
 
 
-def test_ignored_dolp_is_contiguous(noiseless_l1b):
-    # One noisy cell low down: dolp is ignored from there upwards, with no holes
+def test_a_dark_channel_does_not_switch_off_dolp_elsewhere(noiseless_l1b):
+    # Channel 1 is dark in the lower troposphere, as in a water band: only its
+    # cells there are ignored, not its dolp higher up or the other channel
     l1b = noiseless_l1b.copy(deep=True)
-    l1b["dolp_noise"][0, 2, 1, 10] = 1.0
-    noise = (
-        L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=0.01)
-        .spectra["dolp"]
-        .ds["radiance_noise"]
+    l1b["dolp_noise"][0, 2, 1, :8] = 1.0
+    image = L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=0.01)
+    noise = image.spectra["dolp"].ds["radiance_noise"].to_numpy()
+    reported = (
+        noiseless_l1b["dolp_noise"]
+        .isel(observation_set=0, across_track=2)
+        .transpose("wavelength", "altitude")
         .to_numpy()
     )
-    assert np.all(noise[:, :10] < IGNORED_NOISE)
-    assert np.all(noise[:, 10:] == IGNORED_NOISE)
+
+    assert np.all(noise[1, :8] == IGNORED_NOISE)
+    np.testing.assert_allclose(noise[1, 8:20], reported[1, 8:20])
+    np.testing.assert_allclose(noise[0, :20], reported[0, :20])
 
 
 def test_low_dolp_keeps_all_radiance(small_cal_db, make_frames):
@@ -321,12 +324,7 @@ def test_low_dolp_keeps_all_radiance(small_cal_db, make_frames):
     image = L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=0.01)
 
     assert image.spectra["I"].ds["tangent_altitude"].size == l1b.sizes["altitude"]
-    ignored = (image.spectra["dolp"].ds["radiance_noise"] == IGNORED_NOISE).all(
-        "wavelength"
-    )
-    first = int(np.argmax(ignored.to_numpy()))
-    assert ignored.any()
-    assert ignored.to_numpy()[first:].all()
+    assert (image.spectra["dolp"].ds["radiance_noise"] == IGNORED_NOISE).any()
 
 
 def test_dolp_noise_threshold_is_required(noiseless_l1b):
