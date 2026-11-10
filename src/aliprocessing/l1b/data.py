@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import sasktran2 as sk
 import xarray as xr
 from skretrieval.core.radianceformat import RadianceGridded
@@ -67,6 +68,67 @@ class L1bImage(Observation):
         self._spectra = spectra
         self._low_alt = low_alt
         self._high_alt = high_alt
+
+    @classmethod
+    def from_l1b(
+        cls,
+        l1b: xr.Dataset,
+        observation_set: int,
+        across_track: int,
+        low_alt=0,
+        high_alt=100000,
+    ) -> L1bImage:
+        """One observation set and across-track bin of an L1B granule.
+
+        Gives the radiance as "I" and the degree of linear polarization as "dolp".
+        Lines of sight are the L1B altitudes where every channel is finite. The
+        geometry, reported at the reference altitudes, is interpolated to each
+        altitude and averaged over the channels, which are observed seconds apart.
+        """
+        cell = l1b.isel(observation_set=observation_set, across_track=across_track)
+        finite = (
+            np.isfinite(cell["radiance"]).all("wavelength")
+            & np.isfinite(cell["dolp"]).all("wavelength")
+        ).to_numpy()
+        cell = cell.isel(altitude=finite)
+        altitude = cell["altitude"].to_numpy()
+
+        def along_los(name):
+            values = cell[name].mean("wavelength")
+            return np.interp(altitude, cell["reference_altitude"], values)
+
+        # Circular mean, since the angle wraps at ±180
+        relative_azimuth = np.rad2deg(
+            np.angle(
+                np.exp(1j * np.deg2rad(cell["relative_solar_azimuth_angle"]))
+                .mean("wavelength")
+                .to_numpy()
+            )
+        )
+        geometry = {
+            "tangent_altitude": altitude,
+            "tangent_latitude": along_los("tangent_latitude"),
+            "tangent_longitude": along_los("tangent_longitude"),
+            "sample_wavelengths_nm": cell["wavelength"].to_numpy(),
+            "time": pd.to_datetime(cell["time"].min().to_numpy()),
+            "observer_latitude": float(cell["spacecraft_latitude"].mean()),
+            "observer_longitude": float(cell["spacecraft_longitude"].mean()),
+            "observer_altitude": float(cell["spacecraft_altitude"].mean()),
+            "sza": along_los("solar_zenith_angle"),
+            "saa": np.interp(altitude, cell["reference_altitude"], relative_azimuth),
+            "los_azimuth_angle": along_los("los_azimuth_angle"),
+        }
+        spectra = {
+            state: L1bSpectra.from_np_arrays(
+                radiance=cell[value].transpose("wavelength", "altitude").to_numpy(),
+                radiance_noise=cell[f"{value}_noise"]
+                .transpose("wavelength", "altitude")
+                .to_numpy(),
+                **geometry,
+            )
+            for state, value in (("I", "radiance"), ("dolp", "dolp"))
+        }
+        return cls(spectra, low_alt=low_alt, high_alt=high_alt)
 
     @property
     def spectra(self):

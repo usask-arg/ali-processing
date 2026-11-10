@@ -7,6 +7,7 @@ from conftest import SMALL_INSTRUMENT_KWARGS
 from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
 from aliprocessing.forward_model import exposure_for_fill, simulate_l1a
 from aliprocessing.instrument import static_dark
+from aliprocessing.l1b.data import L1bImage
 from aliprocessing.processing.l1a_to_l1b import process_l1a_to_l1b
 from aliprocessing.schemas import SchemaValidationError, validate
 
@@ -192,3 +193,29 @@ def test_invalid_l1a_is_rejected(small_cal_db, limb_scene, make_frames):
     incomplete = l1a.to_dataset(inherit=False).isel(time=[1, 2])
     with pytest.raises(SchemaValidationError, match="observation-sets-complete"):
         process_l1a_to_l1b(incomplete, small_cal_db)
+
+
+def test_l1b_image_for_l2(noiseless_l1b):
+    image = L1bImage.from_l1b(noiseless_l1b, 0, 2)
+    assert set(image.spectra) == {"I", "dolp"}
+    for spectra in image.spectra.values():
+        ds = spectra.ds
+        assert dict(ds["radiance"].sizes) == {"wavelength": 2, "los": 51}
+        np.testing.assert_allclose(ds["tangent_altitude"], noiseless_l1b["altitude"])
+    cell = noiseless_l1b.isel(observation_set=0, across_track=2)
+    np.testing.assert_allclose(image.spectra["I"].ds["radiance"], cell["radiance"])
+    np.testing.assert_allclose(image.spectra["dolp"].ds["radiance"], cell["dolp"])
+    # Geometry is interpolated from the reference altitudes onto each altitude
+    np.testing.assert_allclose(
+        image.spectra["I"].ds["solar_zenith_angle"].isel(los=25),
+        cell["solar_zenith_angle"].sel(reference_altitude=25e3).mean("wavelength"),
+    )
+
+
+def test_l1b_image_drops_altitudes_outside_the_field_of_view(noiseless_l1b):
+    l1b = noiseless_l1b.copy(deep=True)
+    l1b["radiance"][0, 2, 1, :3] = np.nan
+    image = L1bImage.from_l1b(l1b, 0, 2)
+    tangent_altitude = image.spectra["I"].ds["tangent_altitude"]
+    assert float(tangent_altitude.min()) == 3e3
+    assert tangent_altitude.size == 48
