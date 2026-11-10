@@ -168,7 +168,9 @@ def test_chain_returns_the_atmosphere():
     l1b = process_l1a_to_l1b(simulate_l1a(cal_db, scene, frames, noise=False), cal_db)
 
     # The bin next to the boresight
-    image = L1bImage.from_l1b(l1b, 0, 1, low_alt=8e3, high_alt=46e3)
+    image = L1bImage.from_l1b(
+        l1b, 0, 1, max_dolp_noise=0.01, low_alt=8e3, high_alt=46e3
+    )
     state = process_l1b_to_l2_image(
         image, pressure_temperature, None, minimizer_kwargs={"verbose": 0}
     )

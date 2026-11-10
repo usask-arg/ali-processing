@@ -63,6 +63,11 @@ class L1bSpectra:
         return self._ds
 
 
+# dolp_noise given to L2 where dolp should be ignored; dolp is at most about 1,
+# so this gives it a weight about 1e-6 of a dolp with unit noise
+IGNORED_NOISE = 1e3
+
+
 def _circular_mean_deg(angles) -> float:
     """Mean of angles in degrees, in [-180, 180)."""
     mean = np.angle(np.exp(1j * np.deg2rad(np.asarray(angles))).mean())
@@ -81,30 +86,42 @@ class L1bImage(Observation):
         l1b: xr.Dataset,
         observation_set: int,
         across_track: int,
+        *,
+        max_dolp_noise: float,
         low_alt=0,
         high_alt=100000,
-        min_dolp_snr: float = 3.0,
     ) -> L1bImage:
         """One observation set and across-track bin of an L1B granule.
 
         Gives the radiance as "I" and the degree of linear polarization as "dolp".
         Lines of sight are the L1B altitudes where, in every channel, the values
-        are finite, no pixel saturated, and dolp is at least ``min_dolp_snr`` times
-        its noise. The last condition keeps out altitudes where noise biases dolp
-        upward (by about dolp_noise² / (2 dolp)), which L2 does not model. The
-        geometry, reported at the reference altitudes, is interpolated to each
+        are finite and no pixel saturated.
+
+        Noise biases dolp upward, by about dolp_noise² / (2 dolp), which L2 does
+        not model. From the lowest altitude where dolp_noise exceeds
+        ``max_dolp_noise`` in any channel upwards, dolp_noise is set to
+        ``IGNORED_NOISE`` so that L2 effectively ignores dolp there, while the
+        radiance at those altitudes is kept. The decision uses only the noise
+        estimate, not the measured dolp, so it is not driven by the noise in dolp
+        itself, and the de-weighted altitudes are contiguous. The threshold
+        depends on the retrieval and has no default.
+
+        The geometry, reported at the reference altitudes, is interpolated to each
         altitude and averaged over the channels, which are observed seconds apart.
         """
         cell = l1b.isel(observation_set=observation_set, across_track=across_track)
-        with np.errstate(invalid="ignore"):
-            usable = (
-                np.isfinite(cell["radiance"])
-                & np.isfinite(cell["dolp"])
-                & (cell["saturated_fraction"] == 0)
-                & (cell["dolp"] >= min_dolp_snr * cell["dolp_noise"])
-            ).all("wavelength")
+        usable = (
+            np.isfinite(cell["radiance"])
+            & np.isfinite(cell["dolp"])
+            & (cell["saturated_fraction"] == 0)
+        ).all("wavelength")
         cell = cell.isel(altitude=usable.to_numpy())
         altitude = cell["altitude"].to_numpy()
+
+        noisy = (cell["dolp_noise"] > max_dolp_noise).any("wavelength").to_numpy()
+        dolp_ignored = np.cumsum(noisy) > 0
+        dolp_noise = cell["dolp_noise"].transpose("wavelength", "altitude").to_numpy()
+        dolp_noise = np.where(dolp_ignored, IGNORED_NOISE, dolp_noise)
 
         reference_altitude = cell["reference_altitude"].to_numpy()
 
@@ -137,12 +154,16 @@ class L1bImage(Observation):
             "saa": along_los("relative_solar_azimuth_angle", wrap_at=180),
             "los_azimuth_angle": along_los("los_azimuth_angle", wrap_at=360),
         }
+        noise = {
+            "radiance": cell["radiance_noise"]
+            .transpose("wavelength", "altitude")
+            .to_numpy(),
+            "dolp": dolp_noise,
+        }
         spectra = {
             state: L1bSpectra.from_np_arrays(
                 radiance=cell[value].transpose("wavelength", "altitude").to_numpy(),
-                radiance_noise=cell[f"{value}_noise"]
-                .transpose("wavelength", "altitude")
-                .to_numpy(),
+                radiance_noise=noise[value],
                 **geometry,
             )
             for state, value in (("I", "radiance"), ("dolp", "dolp"))

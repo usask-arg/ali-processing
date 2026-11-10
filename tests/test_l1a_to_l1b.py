@@ -5,10 +5,14 @@ import pytest
 from conftest import SMALL_INSTRUMENT_KWARGS, SPACECRAFT
 
 from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
-from aliprocessing.forward_model import exposure_for_fill, simulate_l1a
+from aliprocessing.forward_model import (
+    exponential_scene,
+    exposure_for_fill,
+    simulate_l1a,
+)
 from aliprocessing.geometry import boresight_elevation_for_tangent_altitude
 from aliprocessing.instrument import static_dark
-from aliprocessing.l1b.data import L1bImage
+from aliprocessing.l1b.data import IGNORED_NOISE, L1bImage
 from aliprocessing.processing.l1a_to_l1b import process_l1a_to_l1b
 from aliprocessing.schemas import SchemaValidationError, validate
 
@@ -197,7 +201,7 @@ def test_invalid_l1a_is_rejected(small_cal_db, limb_scene, make_frames):
 
 
 def test_l1b_image_for_l2(noiseless_l1b):
-    image = L1bImage.from_l1b(noiseless_l1b, 0, 2, min_dolp_snr=0)
+    image = L1bImage.from_l1b(noiseless_l1b, 0, 2, max_dolp_noise=np.inf)
     assert set(image.spectra) == {"I", "dolp"}
     for spectra in image.spectra.values():
         ds = spectra.ds
@@ -216,7 +220,7 @@ def test_l1b_image_for_l2(noiseless_l1b):
 def test_l1b_image_drops_altitudes_outside_the_field_of_view(noiseless_l1b):
     l1b = noiseless_l1b.copy(deep=True)
     l1b["radiance"][0, 2, 1, :3] = np.nan
-    image = L1bImage.from_l1b(l1b, 0, 2, min_dolp_snr=0)
+    image = L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=np.inf)
     tangent_altitude = image.spectra["I"].ds["tangent_altitude"]
     assert float(tangent_altitude.min()) == 3e3
     assert tangent_altitude.size == 48
@@ -232,7 +236,7 @@ def test_l1b_image_handles_wrapping_angles(noiseless_l1b):
     l1b["tangent_longitude"][:] = 179.8 * alternating
     l1b["los_azimuth_angle"][:] = np.where(alternating > 0, 359.6, 0.4)
 
-    ds = L1bImage.from_l1b(l1b, 0, 2, min_dolp_snr=0).spectra["I"].ds
+    ds = L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=np.inf).spectra["I"].ds
     assert np.all(np.abs(ds["relative_solar_azimuth_angle"]) > 179)
     assert np.all(np.abs(ds["tangent_longitude"]) > 179)
     los_azimuth = ds["los_azimuth_angle"].to_numpy()
@@ -268,15 +272,66 @@ def test_granule_of_blank_frames_is_rejected(small_cal_db, limb_scene, make_fram
         process_l1a_to_l1b(l1a, small_cal_db)
 
 
-def test_l1b_image_keeps_dolp_only_where_it_is_well_above_its_noise(noiseless_l1b):
+def test_l1b_image_ignores_noisy_dolp_but_keeps_radiance(noiseless_l1b):
+    threshold = 0.01
     cell = noiseless_l1b.isel(observation_set=0, across_track=2)
-    snr = (cell["dolp"] / cell["dolp_noise"]).min("wavelength")
-    tangent_altitude = (
-        L1bImage.from_l1b(noiseless_l1b, 0, 2).spectra["dolp"].ds["tangent_altitude"]
+    image = L1bImage.from_l1b(noiseless_l1b, 0, 2, max_dolp_noise=threshold)
+
+    # Every altitude stays, for both I and dolp
+    for spectra in image.spectra.values():
+        np.testing.assert_array_equal(spectra.ds["tangent_altitude"], cell["altitude"])
+    np.testing.assert_allclose(image.spectra["I"].ds["radiance"], cell["radiance"])
+
+    # dolp is ignored from the first altitude where its noise is too large
+    noise = image.spectra["dolp"].ds["radiance_noise"].to_numpy()
+    noisy = (cell["dolp_noise"] > threshold).any("wavelength").to_numpy()
+    first_noisy = int(np.argmax(noisy))
+    assert 20 < first_noisy < 50
+    np.testing.assert_allclose(
+        noise[:, :first_noisy],
+        cell["dolp_noise"].transpose("wavelength", "altitude")[:, :first_noisy],
     )
-    np.testing.assert_array_equal(tangent_altitude, cell["altitude"][snr >= 3])
-    # The faint top of the limb is cut; the small test instrument is noisy there
-    assert 30e3 < float(tangent_altitude.max()) < 40e3
+    assert np.all(noise[:, first_noisy:] == IGNORED_NOISE)
+
+
+def test_ignored_dolp_is_contiguous(noiseless_l1b):
+    # One noisy cell low down: dolp is ignored from there upwards, with no holes
+    l1b = noiseless_l1b.copy(deep=True)
+    l1b["dolp_noise"][0, 2, 1, 10] = 1.0
+    noise = (
+        L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=0.01)
+        .spectra["dolp"]
+        .ds["radiance_noise"]
+        .to_numpy()
+    )
+    assert np.all(noise[:, :10] < IGNORED_NOISE)
+    assert np.all(noise[:, 10:] == IGNORED_NOISE)
+
+
+def test_low_dolp_keeps_all_radiance(small_cal_db, make_frames):
+    # Nearly unpolarized light: dolp is noise-dominated through most of the
+    # stratosphere, but the radiance must still reach L2 at every altitude
+    scene = exponential_scene(
+        small_cal_db, radiance_at_zero=[0.05, 0.03], q=0.003, u=0.0
+    )
+    frames = make_frames(exposure_time=exposure_for_fill(small_cal_db, scene))
+    l1b = process_l1a_to_l1b(
+        simulate_l1a(small_cal_db, scene, frames, seed=2), small_cal_db
+    )
+    image = L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=0.01)
+
+    assert image.spectra["I"].ds["tangent_altitude"].size == l1b.sizes["altitude"]
+    ignored = (image.spectra["dolp"].ds["radiance_noise"] == IGNORED_NOISE).all(
+        "wavelength"
+    )
+    first = int(np.argmax(ignored.to_numpy()))
+    assert ignored.any()
+    assert ignored.to_numpy()[first:].all()
+
+
+def test_dolp_noise_threshold_is_required(noiseless_l1b):
+    with pytest.raises(TypeError, match="max_dolp_noise"):
+        L1bImage.from_l1b(noiseless_l1b, 0, 2)
 
 
 def test_l1b_image_drops_saturated_altitudes(small_cal_db, limb_scene, make_frames):
@@ -291,7 +346,9 @@ def test_l1b_image_drops_saturated_altitudes(small_cal_db, limb_scene, make_fram
     assert saturated.any()
 
     tangent_altitude = (
-        L1bImage.from_l1b(l1b, 0, 2, min_dolp_snr=0).spectra["I"].ds["tangent_altitude"]
+        L1bImage.from_l1b(l1b, 0, 2, max_dolp_noise=np.inf)
+        .spectra["I"]
+        .ds["tangent_altitude"]
     )
     np.testing.assert_array_equal(tangent_altitude, l1b["altitude"][~saturated])
 
