@@ -53,7 +53,9 @@ def electron_rate_per_radiance(cal_db: xr.Dataset, channel: int) -> np.ndarray:
         .transpose("spectral_channel", "analyzer")
         .to_numpy()[channel]
     )
-    pixel_transmission = np.where(analyzer >= 0, transmission[np.maximum(analyzer, 0)], np.nan)
+    pixel_transmission = np.where(
+        analyzer >= 0, transmission[np.maximum(analyzer, 0)], np.nan
+    )
     return (
         pixel_array(cal_db, "pixel_etendue")
         * pixel_transmission
@@ -85,7 +87,7 @@ def detector_variance(
 ) -> np.ndarray:
     """Variance of a mean of exposures, in counts²: shot, read and quantization noise.
 
-    Shot noise covers the signal and dark electrons, (S − o) / g.
+    Shot noise covers the signal and dark electrons, (S - o) / g.
     """
     gain = float(cal_db["detector_gain"])
     read_noise = float(cal_db["detector_read_noise"])

@@ -72,11 +72,17 @@ def test_brighter_at_lower_tangent_altitude(small_cal_db, limb_scene, make_frame
     assert np.mean(image[39]) > np.mean(image[0])
 
 
-def test_exposure_fills_to_the_requested_fraction(small_cal_db, limb_scene, make_frames):
+def test_exposure_fills_to_the_requested_fraction(
+    small_cal_db, limb_scene, make_frames
+):
     l1a = simulate_l1a(small_cal_db, limb_scene, make_frames(), noise=False)
     gain = float(small_cal_db["detector_gain"])
-    signal = l1a["image"].isel(time=slice(0, 2)) - pixel_array(small_cal_db, "dark_offset")
-    peak_fraction = float(signal.max()) * gain / float(small_cal_db["detector_full_well"])
+    signal = l1a["image"].isel(time=slice(0, 2)) - pixel_array(
+        small_cal_db, "dark_offset"
+    )
+    peak_fraction = (
+        float(signal.max()) * gain / float(small_cal_db["detector_full_well"])
+    )
     # 0.6 of saturation for the brightest scene radiance; the pixels see a bit less
     assert 0.4 < peak_fraction <= 0.6
     assert not l1a["saturated"].any()
@@ -105,7 +111,9 @@ def test_noise_matches_the_detector_model(small_cal_db, limb_scene, make_frames)
     )
     predicted = detector_variance(noiseless, small_cal_db, num_averaged_exposures=1)
 
-    np.testing.assert_allclose(realizations.mean(axis=0).mean(), noiseless.mean(), rtol=1e-3)
+    np.testing.assert_allclose(
+        realizations.mean(axis=0).mean(), noiseless.mean(), rtol=1e-3
+    )
     ratio = realizations.var(axis=0, ddof=1) / predicted
     # 200 realizations: the variance of each pixel is known to about 10%
     assert np.median(ratio) == pytest.approx(1.0, abs=0.03)
@@ -154,4 +162,6 @@ def test_photon_weighted_throughput_of_a_gaussian(small_cal_db, small_instrument
         * 1e-9
         / (PLANCK * SPEED_OF_LIGHT)
     )
-    np.testing.assert_allclose(photon_weighted_throughput(small_cal_db), expected, rtol=1e-6)
+    np.testing.assert_allclose(
+        photon_weighted_throughput(small_cal_db), expected, rtol=1e-6
+    )

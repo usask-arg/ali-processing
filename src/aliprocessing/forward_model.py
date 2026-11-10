@@ -67,7 +67,9 @@ def simulate_l1a(
     adc_max = saturation_counts(cal_db)
     offset = pixel_array(cal_db, "dark_offset")
     dark_rate = (
-        pixel_array(cal_db, "dark_current") if "dark_current" in cal_db else np.zeros_like(offset)
+        pixel_array(cal_db, "dark_current")
+        if "dark_current" in cal_db
+        else np.zeros_like(offset)
     )
     scene_altitude = scene["altitude"].to_numpy()
     stokes = {
@@ -86,9 +88,11 @@ def simulate_l1a(
         if channel >= 0:
             instrument = _instrument_frame(frame)
             looks = instrument.look_vectors(azimuth, elevation)
-            sphere = LocalSphere.at_tangent_point(instrument.observer, instrument.boresight)
+            sphere = LocalSphere.at_tangent_point(
+                instrument.observer, instrument.boresight
+            )
             tangent_altitude = sphere.tangent_altitude(instrument.observer, looks)
-            I, Q, U = (  # noqa: N806
+            I, Q, U = (  # noqa: E741
                 np.interp(tangent_altitude, scene_altitude, stokes[name][channel])
                 for name in ("I", "Q", "U")
             )
@@ -103,14 +107,20 @@ def simulate_l1a(
             total = np.zeros_like(offset)
             frame_saturated = np.zeros(offset.shape, dtype=bool)
             for _ in range(num_exposures):
-                electrons = rng.poisson(expected) + rng.normal(0.0, read_noise, offset.shape)
-                counts, exposure_saturated = _digitize(electrons, offset, gain, full_well, adc_max)
+                electrons = rng.poisson(expected) + rng.normal(
+                    0.0, read_noise, offset.shape
+                )
+                counts, exposure_saturated = _digitize(
+                    electrons, offset, gain, full_well, adc_max
+                )
                 counts = np.round(counts)
                 total += counts
                 frame_saturated |= exposure_saturated
             images.append(total / num_exposures)
         else:
-            counts, frame_saturated = _digitize(expected, offset, gain, full_well, adc_max)
+            counts, frame_saturated = _digitize(
+                expected, offset, gain, full_well, adc_max
+            )
             images.append(counts)
         saturated.append(frame_saturated)
 
@@ -184,7 +194,7 @@ def observation_sequence(
     channels, sets = np.array(channels), np.array(sets)
     num_frames = len(channels)
 
-    interval = np.timedelta64(int(round(frame_interval * 1e9)), "ns")
+    interval = np.timedelta64(round(frame_interval * 1e9), "ns")
     time = np.datetime64(start, "ns") + np.arange(num_frames) * interval
 
     def constant(value):
@@ -196,9 +206,14 @@ def observation_sequence(
             "observation_set": ("time", sets),
             "exposure_time": (
                 "time",
-                np.where(channels >= 0, exposures[np.maximum(channels, 0)], exposures.max()),
+                np.where(
+                    channels >= 0, exposures[np.maximum(channels, 0)], exposures.max()
+                ),
             ),
-            "num_averaged_exposures": ("time", np.full(num_frames, num_averaged_exposures)),
+            "num_averaged_exposures": (
+                "time",
+                np.full(num_frames, num_averaged_exposures),
+            ),
             "spacecraft_latitude": constant(spacecraft_latitude),
             "spacecraft_longitude": constant(spacecraft_longitude),
             "spacecraft_altitude": constant(spacecraft_altitude),
@@ -223,20 +238,29 @@ def exposure_for_fill(
     gain = float(cal_db["detector_gain"])
     capacity = min(
         float(cal_db["detector_full_well"]),
-        (saturation_counts(cal_db) - np.nanmax(pixel_array(cal_db, "dark_offset"))) * gain,
+        (saturation_counts(cal_db) - np.nanmax(pixel_array(cal_db, "dark_offset")))
+        * gain,
     )
     grid = cal_db["altitude"].to_numpy()
     in_grid = scene.sel(altitude=slice(grid.min(), grid.max()))
     intensity = in_grid["I"].transpose("spectral_channel", "altitude").to_numpy()
-    polarized = np.hypot(in_grid["Q"], in_grid["U"]).transpose(
-        "spectral_channel", "altitude"
-    ).to_numpy()
+    polarized = (
+        np.hypot(in_grid["Q"], in_grid["U"])
+        .transpose("spectral_channel", "altitude")
+        .to_numpy()
+    )
     brightest = np.max(intensity + polarized, axis=-1)
 
     exposures = []
     for channel in range(cal_db.sizes["spectral_channel"]):
-        peak_rate = np.nanmax(electron_rate_per_radiance(cal_db, channel)) * brightest[channel]
-        dark_rate = np.nanmax(pixel_array(cal_db, "dark_current")) * gain if "dark_current" in cal_db else 0.0
+        peak_rate = (
+            np.nanmax(electron_rate_per_radiance(cal_db, channel)) * brightest[channel]
+        )
+        dark_rate = (
+            np.nanmax(pixel_array(cal_db, "dark_current")) * gain
+            if "dark_current" in cal_db
+            else 0.0
+        )
         exposures.append(fill * capacity / (peak_rate + dark_rate))
     return np.array(exposures)
 
@@ -257,7 +281,9 @@ def exponential_scene(
     """
     altitude = np.arange(-5e3, 100.01e3, 100.0) if altitude is None else altitude
     num_channels = cal_db.sizes["spectral_channel"]
-    radiance = np.broadcast_to(np.asarray(radiance_at_zero, dtype=float), (num_channels,))
+    radiance = np.broadcast_to(
+        np.asarray(radiance_at_zero, dtype=float), (num_channels,)
+    )
     intensity = radiance[:, np.newaxis] * np.exp(-altitude / scale_height)
     dims = ["spectral_channel", "altitude"]
     return xr.Dataset(

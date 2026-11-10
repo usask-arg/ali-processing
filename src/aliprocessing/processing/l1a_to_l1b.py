@@ -49,7 +49,11 @@ _GEOMETRY_VARIABLES = (
     "relative_solar_azimuth_angle",
     "los_azimuth_angle",
 )
-_SPACECRAFT_VARIABLES = ("spacecraft_latitude", "spacecraft_longitude", "spacecraft_altitude")
+_SPACECRAFT_VARIABLES = (
+    "spacecraft_latitude",
+    "spacecraft_longitude",
+    "spacecraft_altitude",
+)
 
 
 def process_l1a_to_l1b(
@@ -108,20 +112,31 @@ def process_l1a_to_l1b(
             cells[name].append(np.stack(set_cells[name], axis=1))
         for name in _GEOMETRY_VARIABLES:
             geometry[name].append(np.stack(set_geometry[name], axis=1))
-        for name in per_frame:
-            per_frame[name].append(np.stack(set_frame[name]))
+        for name, values in per_frame.items():
+            values.append(np.stack(set_frame[name]))
 
     edges = cal_db["across_track_edge"].to_numpy()
     cell_dims = ["observation_set", "across_track", "wavelength", "altitude"]
-    geometry_dims = ["observation_set", "across_track", "wavelength", "reference_altitude"]
+    geometry_dims = [
+        "observation_set",
+        "across_track",
+        "wavelength",
+        "reference_altitude",
+    ]
     frame_dims = ["observation_set", "wavelength"]
     l1b = xr.Dataset(
         {
             "bandpass_fwhm": ("wavelength", cal_db["bandpass_fwhm"].to_numpy()),
             "across_track_angle": ("across_track", 0.5 * (edges[:-1] + edges[1:])),
             **{name: (cell_dims, np.stack(values)) for name, values in cells.items()},
-            **{name: (geometry_dims, np.stack(values)) for name, values in geometry.items()},
-            **{name: (frame_dims, np.stack(values)) for name, values in per_frame.items()},
+            **{
+                name: (geometry_dims, np.stack(values))
+                for name, values in geometry.items()
+            },
+            **{
+                name: (frame_dims, np.stack(values))
+                for name, values in per_frame.items()
+            },
         },
         coords={
             "wavelength": cal_db["center_wavelength"].to_numpy(),
@@ -194,7 +209,11 @@ def _process_frame(frame, channel, cal_db, layout, dark):
     )
     a, b = (s[used] for s in stokes_sensitivities(cal_db, channel, instrument.roll_rad))
     if "saturated" in frame:
-        saturated = frame["saturated"].transpose("detector_row", "detector_column").to_numpy()[used]
+        saturated = (
+            frame["saturated"]
+            .transpose("detector_row", "detector_column")
+            .to_numpy()[used]
+        )
     else:
         saturated = np.zeros(signal.shape, dtype=bool)
 
@@ -215,15 +234,18 @@ def _process_frame(frame, channel, cal_db, layout, dark):
         saturated,
     )
     shape = (layout.num_bins, layout.num_analyzers, -1)
-    estimate = {name: resampled[name].reshape(shape) for name in ("m", "a", "b", "variance")}
+    estimate = {
+        name: resampled[name].reshape(shape) for name in ("m", "a", "b", "variance")
+    }
     with np.errstate(invalid="ignore", divide="ignore"):
-        saturated_fraction = (
-            resampled["count_saturated"].reshape(shape).sum(axis=1)
-            / resampled["count"].reshape(shape).sum(axis=1)
-        )
+        saturated_fraction = resampled["count_saturated"].reshape(shape).sum(
+            axis=1
+        ) / resampled["count"].reshape(shape).sum(axis=1)
 
     # 4. Demodulate each cell
-    cells = _demodulate(estimate["m"], estimate["a"], estimate["b"], estimate["variance"])
+    cells = _demodulate(
+        estimate["m"], estimate["a"], estimate["b"], estimate["variance"]
+    )
     cells["saturated_fraction"] = np.where(
         np.isfinite(cells["radiance"]), saturated_fraction, np.nan
     )
@@ -251,15 +273,18 @@ def _process_frame(frame, channel, cal_db, layout, dark):
     return cells, geometry
 
 
-def _resample(altitude, grid, half_width, group, num_groups, values, variance, saturated):
+def _resample(
+    altitude, grid, half_width, group, num_groups, values, variance, saturated
+):
     """Local-linear kernel estimates on ``grid`` for each group of pixels.
 
     For each grid altitude z_i, fits a straight line in tangent altitude to the
     group's pixels within ``half_width``, weighted by the triangular kernel
-    w = 1 − |z_p − z_i| / h, and evaluates it at z_i. Unlike a weighted mean,
+    w = 1 - |z_p - z_i| / h, and evaluates it at z_i. Unlike a weighted mean,
     this has no first-order bias when the pixel altitudes are unevenly spread
-    around z_i. The estimate is linear in the pixels, Σ ℓ_p x_p with Σ ℓ_p = 1,
-    so the same ℓ_p resample every value and give the variance Σ ℓ_p² var_p.
+    around z_i. The estimate is linear in the pixels, sum(l_p x_p) with
+    sum(l_p) = 1, so the same l_p resample every value and give the variance
+    sum(l_p**2 var_p).
 
     Cells without pixels on both sides of z_i would be extrapolated and are NaN.
     Returns flat arrays of shape (num_groups * len(grid),): each value's
@@ -317,8 +342,12 @@ def _demodulate(m, a, b, variance):
     )
 
     # Invalid cells get a well-posed placeholder system and are set to NaN at the end
-    weight = np.where(valid[..., np.newaxis], 1.0 / np.where(variance > 0, variance, 1.0), 1.0)
-    design = np.where(valid[..., np.newaxis, np.newaxis], design, np.eye(3)[: design.shape[-2]])
+    weight = np.where(
+        valid[..., np.newaxis], 1.0 / np.where(variance > 0, variance, 1.0), 1.0
+    )
+    design = np.where(
+        valid[..., np.newaxis, np.newaxis], design, np.eye(3)[: design.shape[-2]]
+    )
     m = np.where(valid[..., np.newaxis], m, 0.0)
 
     normal = np.einsum("...ki,...k,...kj->...ij", design, weight, design)
@@ -326,8 +355,8 @@ def _demodulate(m, a, b, variance):
     stokes = np.einsum("...ij,...kj,...k,...k->...i", covariance, design, weight, m)
 
     # Placeholder cells have I = 0; they are set to NaN below
-    I = np.where(valid, stokes[..., 0], 1.0)  # noqa: N806
-    Q, U = stokes[..., 1], stokes[..., 2]  # noqa: N806
+    I = np.where(valid, stokes[..., 0], 1.0)  # noqa: E741
+    Q, U = stokes[..., 1], stokes[..., 2]
     q, u = Q / I, U / I
     # Jacobian of (q, u) with respect to (I, Q, U)
     jacobian = np.zeros((*I.shape, 2, 3))
@@ -336,7 +365,11 @@ def _demodulate(m, a, b, variance):
     jacobian[..., 1, 0] = -U / I**2
     jacobian[..., 1, 2] = 1 / I
     qu_covariance = jacobian @ covariance @ np.swapaxes(jacobian, -1, -2)
-    var_q, var_u, cov_qu = qu_covariance[..., 0, 0], qu_covariance[..., 1, 1], qu_covariance[..., 0, 1]
+    var_q, var_u, cov_qu = (
+        qu_covariance[..., 0, 0],
+        qu_covariance[..., 1, 1],
+        qu_covariance[..., 0, 1],
+    )
 
     dolp = np.hypot(q, u)
     # Linearized at dolp > 0; at dolp = 0 the derivative is undefined, so use the

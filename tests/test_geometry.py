@@ -79,7 +79,9 @@ def test_look_at_unreachable_altitude_raises(frame):
 
 
 def test_boresight_elevation_for_tangent_altitude():
-    elevation = boresight_elevation_for_tangent_altitude(40.0, -100.0, 500e3, 90.0, 25e3)
+    elevation = boresight_elevation_for_tangent_altitude(
+        40.0, -100.0, 500e3, 90.0, 25e3
+    )
     frame = InstrumentFrame.from_attitude(40.0, -100.0, 500e3, 90.0, elevation, 0.0)
     assert abs(_exact_altitude(frame.observer, frame.boresight) - 25e3) < 1.0
 
@@ -108,10 +110,15 @@ def test_subsolar_point(time, latitude, longitude):
 def test_solar_angles_at_the_subsolar_point():
     # Observer above the subsolar point, looking north: the sun is behind it
     latitude, longitude = _subsolar("2026-06-21T12:00")
-    frame = InstrumentFrame.from_attitude(latitude - 20, longitude, 500e3, 0.0, -21.0, 0.0)
+    frame = InstrumentFrame.from_attitude(
+        latitude - 20, longitude, 500e3, 0.0, -21.0, 0.0
+    )
     sun = sun_direction(np.datetime64("2026-06-21T12:00"))
     points = tangent_geometry(frame.observer, frame.boresight[np.newaxis], sun)
-    assert abs(points.los_azimuth_angle[0] % 360) < 1.0 or points.los_azimuth_angle[0] > 359
+    assert (
+        abs(points.los_azimuth_angle[0] % 360) < 1.0
+        or points.los_azimuth_angle[0] > 359
+    )
     # Looking away from the sun is backscatter
     assert abs(points.relative_solar_azimuth_angle[0]) > 170
     assert 0 < points.solar_zenith_angle[0] < 90

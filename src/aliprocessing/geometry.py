@@ -1,9 +1,9 @@
 """Viewing and solar geometry shared by the forward model and L1A→L1B.
 
 Conventions follow the calibration database model: a pixel looks along
-normalize(b + tan(α)·x + tan(β)·y), where b is the boresight, y and x are the
-instrument up and right axes after the roll, and α and β are the pixel's azimuth
-and elevation field angles.
+normalize(b + tan(alpha) x + tan(beta) y), where b is the boresight, y and x are
+the instrument up and right axes after the roll, and alpha and beta are the
+pixel's azimuth and elevation field angles.
 """
 
 from __future__ import annotations
@@ -44,9 +44,10 @@ class InstrumentFrame:
         azimuth, elevation, roll = np.deg2rad(
             [boresight_azimuth, boresight_elevation, boresight_roll]
         )
-        boresight = np.cos(elevation) * (
-            np.cos(azimuth) * north + np.sin(azimuth) * east
-        ) + np.sin(elevation) * local_up
+        boresight = (
+            np.cos(elevation) * (np.cos(azimuth) * north + np.sin(azimuth) * east)
+            + np.sin(elevation) * local_up
+        )
 
         # Unrolled axes: up in the vertical plane through the boresight, right
         # completing a right-handed (right, up, boresight) set as the observer sees it
@@ -130,9 +131,13 @@ def tangent_geometry(
         fields["latitude"][i] = geodetic.latitude
         fields["longitude"][i] = geodetic.longitude
         fields["altitude"][i] = geodetic.altitude
-        fields["solar_zenith_angle"][i] = np.degrees(np.arccos(np.clip(up @ sun, -1, 1)))
+        fields["solar_zenith_angle"][i] = np.degrees(
+            np.arccos(np.clip(up @ sun, -1, 1))
+        )
         fields["los_azimuth_angle"][i] = los_azimuth % 360.0
-        fields["relative_solar_azimuth_angle"][i] = _wrap_180(solar_azimuth - los_azimuth)
+        fields["relative_solar_azimuth_angle"][i] = _wrap_180(
+            solar_azimuth - los_azimuth
+        )
     return TangentGeometry(**fields)
 
 
@@ -182,7 +187,9 @@ def boresight_elevation_for_tangent_altitude(
     azimuth = np.deg2rad(boresight_azimuth)
     horizontal = np.cos(azimuth) * north + np.sin(azimuth) * east
 
-    look = np.asarray(geodetic.from_tangent_altitude(tangent_altitude, observer, horizontal))
+    look = np.asarray(
+        geodetic.from_tangent_altitude(tangent_altitude, observer, horizontal)
+    )
     return float(np.degrees(np.arcsin(look @ up)))
 
 

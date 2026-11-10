@@ -89,11 +89,23 @@ def test_noise_estimate_matches_scatter(small_cal_db, limb_scene, make_frames):
         for seed in range(40)
     ]
     stacked = {
-        name: np.stack([run[name].sel(altitude=slice(5e3, 35e3)).to_numpy() for run in runs])
-        for name in ("radiance", "radiance_noise", "q", "q_noise", "u", "u_noise", "q_u_correlation")
+        name: np.stack(
+            [run[name].sel(altitude=slice(5e3, 35e3)).to_numpy() for run in runs]
+        )
+        for name in (
+            "radiance",
+            "radiance_noise",
+            "q",
+            "q_noise",
+            "u",
+            "u_noise",
+            "q_u_correlation",
+        )
     }
     for name in ("radiance", "q", "u"):
-        ratio = stacked[name].std(axis=0, ddof=1) / stacked[f"{name}_noise"].mean(axis=0)
+        ratio = stacked[name].std(axis=0, ddof=1) / stacked[f"{name}_noise"].mean(
+            axis=0
+        )
         # 40 realizations: each cell's scatter is known to about 11%
         assert np.median(ratio) == pytest.approx(1.0, abs=0.06), name
 
@@ -101,7 +113,9 @@ def test_noise_estimate_matches_scatter(small_cal_db, limb_scene, make_frames):
     # and the reported correlation matches the realized one
     q_error = stacked["q"] - stacked["q"].mean(axis=0)
     u_error = stacked["u"] - stacked["u"].mean(axis=0)
-    realized = (q_error * u_error).mean(axis=0) / (q_error.std(axis=0) * u_error.std(axis=0))
+    realized = (q_error * u_error).mean(axis=0) / (
+        q_error.std(axis=0) * u_error.std(axis=0)
+    )
     reported = stacked["q_u_correlation"].mean(axis=0)
     assert np.abs(np.median(reported)) < 0.1
     assert np.median(realized - reported) == pytest.approx(0.0, abs=0.06)
@@ -114,7 +128,9 @@ def test_cells_outside_the_field_of_view_are_nan(limb_scene, make_frames):
     )
     cal_db = simulated_cal_db(narrow)
     frames = make_frames()
-    l1b = process_l1a_to_l1b(simulate_l1a(cal_db, limb_scene, frames, noise=False), cal_db)
+    l1b = process_l1a_to_l1b(
+        simulate_l1a(cal_db, limb_scene, frames, noise=False), cal_db
+    )
 
     radiance = l1b["radiance"].isel(observation_set=0, wavelength=0)
     assert np.isnan(radiance.sel(altitude=[0.0, 50e3])).all()
@@ -132,7 +148,9 @@ def test_saturation_is_flagged(small_cal_db, limb_scene, make_frames):
     # Ten times the exposure that fills the brightest pixel to 60%: rows below
     # about 15 km saturate, the faint top of the limb does not
     exposure = 10 * exposure_for_fill(small_cal_db, limb_scene)
-    l1a = simulate_l1a(small_cal_db, limb_scene, make_frames(exposure_time=exposure), seed=1)
+    l1a = simulate_l1a(
+        small_cal_db, limb_scene, make_frames(exposure_time=exposure), seed=1
+    )
     fraction = process_l1a_to_l1b(l1a, small_cal_db)["saturated_fraction"].isel(
         observation_set=0, wavelength=0
     )

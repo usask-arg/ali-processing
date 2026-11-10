@@ -17,7 +17,9 @@ import sasktran2 as sk
 from aliprocessing.geometry import InstrumentFrame, sun_direction, tangent_geometry
 
 
-def _single_scatter_qu(tangent_altitude, relative_azimuth_deg, observer_altitude, sza_deg):
+def _single_scatter_qu(
+    tangent_altitude, relative_azimuth_deg, observer_altitude, sza_deg
+):
     config = sk.Config()
     config.num_stokes = 3
     config.stokes_basis = sk.StokesBasis.Observer
@@ -35,7 +37,10 @@ def _single_scatter_qu(tangent_altitude, relative_azimuth_deg, observer_altitude
     viewing = sk.ViewingGeometry()
     viewing.add_ray(
         sk.TangentAltitudeSolar(
-            tangent_altitude, np.deg2rad(relative_azimuth_deg), observer_altitude, cos_sza
+            tangent_altitude,
+            np.deg2rad(relative_azimuth_deg),
+            observer_altitude,
+            cos_sza,
         )
     )
     atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=np.array([745.0]))
@@ -62,7 +67,9 @@ def _single_scatter_qu(tangent_altitude, relative_azimuth_deg, observer_altitude
     ],
 )
 def test_polarization_angle_matches_sasktran2(boresight_azimuth, time):
-    frame = InstrumentFrame.from_attitude(40.0, -100.0, 500e3, boresight_azimuth, -21.0, 0.0)
+    frame = InstrumentFrame.from_attitude(
+        40.0, -100.0, 500e3, boresight_azimuth, -21.0, 0.0
+    )
     sun = sun_direction(np.datetime64(time))
     point = tangent_geometry(frame.observer, frame.boresight[np.newaxis], sun)
 

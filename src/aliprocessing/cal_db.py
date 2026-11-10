@@ -80,7 +80,9 @@ class SimpleInstrument:
     @property
     def num_rows(self) -> int:
         num_analyzers = len(self.analyzer_angles_deg)
-        return num_analyzers * self.rows_per_subimage + (num_analyzers - 1) * self.gap_rows
+        return (
+            num_analyzers * self.rows_per_subimage + (num_analyzers - 1) * self.gap_rows
+        )
 
     def depression_angle_deg(self, tangent_altitude: float) -> float:
         """Angle below the horizontal, on a spherical Earth, to a tangent altitude."""
@@ -106,7 +108,9 @@ class SimpleInstrument:
             self.depression_angle_deg(low) + self.depression_angle_deg(high)
         )
         observer_radius = EARTH_RADIUS + self.orbit_altitude
-        return float(observer_radius * np.cos(np.deg2rad(middle_depression)) - EARTH_RADIUS)
+        return float(
+            observer_radius * np.cos(np.deg2rad(middle_depression)) - EARTH_RADIUS
+        )
 
     @property
     def pixel_altitude_spacing(self) -> float:
@@ -143,7 +147,9 @@ def simulated_cal_db(
     vertical_ifov = instrument.vertical_ifov_deg
     horizontal_ifov = instrument.horizontal_ifov_deg or vertical_ifov
     # Row 0 of each sub-image looks highest
-    elevation_rows = ((instrument.rows_per_subimage - 1) / 2 - row_in_subimage) * vertical_ifov
+    elevation_rows = (
+        (instrument.rows_per_subimage - 1) / 2 - row_in_subimage
+    ) * vertical_ifov
     azimuth_columns = (
         np.arange(instrument.num_columns) - (instrument.num_columns - 1) / 2
     ) * horizontal_ifov
@@ -153,8 +159,12 @@ def simulated_cal_db(
     # Polarization
     two_theta = np.deg2rad(2 * np.array(instrument.analyzer_angles_deg))
     k = np.where(used, pixel_analyzer, 0)
-    q_sensitivity = np.where(used, instrument.analyzer_efficiency * np.cos(two_theta)[k], np.nan)
-    u_sensitivity = np.where(used, instrument.analyzer_efficiency * np.sin(two_theta)[k], np.nan)
+    q_sensitivity = np.where(
+        used, instrument.analyzer_efficiency * np.cos(two_theta)[k], np.nan
+    )
+    u_sensitivity = np.where(
+        used, instrument.analyzer_efficiency * np.sin(two_theta)[k], np.nan
+    )
 
     # Radiometry: aperture times pixel solid angle, with vignetting and PRNU
     pixel_solid_angle = np.deg2rad(vertical_ifov) * np.deg2rad(horizontal_ifov)
@@ -173,16 +183,22 @@ def simulated_cal_db(
     centers = np.array(instrument.center_wavelengths_nm)
     fwhm = instrument.bandpass_fwhm_nm
     wavelength = np.arange(
-        centers.min() - 5 * fwhm, centers.max() + 5 * fwhm, instrument.throughput_step_nm
+        centers.min() - 5 * fwhm,
+        centers.max() + 5 * fwhm,
+        instrument.throughput_step_nm,
     )
     sigma = fwhm / (2 * np.sqrt(2 * np.log(2)))
     throughput = instrument.peak_throughput * np.exp(
         -0.5 * ((wavelength - centers[:, np.newaxis]) / sigma) ** 2
     )
 
-    dark_offset = instrument.dark_offset + instrument.dark_offset_spread * rng.standard_normal(shape)
+    dark_offset = (
+        instrument.dark_offset
+        + instrument.dark_offset_spread * rng.standard_normal(shape)
+    )
     dark_current = np.clip(
-        instrument.dark_current + instrument.dark_current_spread * rng.standard_normal(shape),
+        instrument.dark_current
+        + instrument.dark_current_spread * rng.standard_normal(shape),
         0,
         None,
     )
@@ -202,12 +218,17 @@ def simulated_cal_db(
             "u_sensitivity": (channel_pixel_dims, per_channel(u_sensitivity)),
             "analyzer_transmission": (
                 ["spectral_channel", "analyzer"],
-                np.full((num_channels, num_analyzers), instrument.analyzer_transmission),
+                np.full(
+                    (num_channels, num_analyzers), instrument.analyzer_transmission
+                ),
             ),
             "pixel_elevation_angle": (pixel_dims, elevation),
             "pixel_azimuth_angle": (pixel_dims, azimuth),
             "pixel_etendue": (pixel_dims, np.where(used, etendue, np.nan)),
-            "spectral_throughput": (["spectral_channel", "throughput_wavelength"], throughput),
+            "spectral_throughput": (
+                ["spectral_channel", "throughput_wavelength"],
+                throughput,
+            ),
             "center_wavelength": (["spectral_channel"], centers),
             "bandpass_fwhm": (["spectral_channel"], np.full(num_channels, fwhm)),
             "dark_offset": (pixel_dims, dark_offset),
@@ -219,7 +240,9 @@ def simulated_cal_db(
             "altitude_kernel_half_width": ((), kernel_half_width),
             "across_track_edge": (
                 ["across_track_edge"],
-                np.linspace(-half_width, half_width, instrument.num_across_track_bins + 1),
+                np.linspace(
+                    -half_width, half_width, instrument.num_across_track_bins + 1
+                ),
             ),
         },
         coords={
