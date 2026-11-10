@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import sasktran2 as sk
 import xarray as xr
 from skretrieval.core.radianceformat import RadianceGridded
@@ -62,11 +63,114 @@ class L1bSpectra:
         return self._ds
 
 
+# dolp_noise given to L2 where dolp should be ignored; dolp is at most about 1,
+# so this gives it a weight about 1e-6 of a dolp with unit noise
+IGNORED_NOISE = 1e3
+
+
+def _circular_mean_deg(angles) -> float:
+    """Mean of angles in degrees, in [-180, 180)."""
+    mean = np.angle(np.exp(1j * np.deg2rad(np.asarray(angles))).mean())
+    return float((np.rad2deg(mean) + 180.0) % 360.0 - 180.0)
+
+
 class L1bImage(Observation):
     def __init__(self, spectra: dict[xr.Dataset], low_alt=0, high_alt=100000):
         self._spectra = spectra
         self._low_alt = low_alt
         self._high_alt = high_alt
+
+    @classmethod
+    def from_l1b(
+        cls,
+        l1b: xr.Dataset,
+        observation_set: int,
+        across_track: int,
+        *,
+        max_dolp_noise: float | None = None,
+        low_alt=0,
+        high_alt=100000,
+    ) -> L1bImage:
+        """One observation set and across-track bin of an L1B granule.
+
+        Gives the radiance as "I" and the degree of linear polarization as "dolp".
+        Lines of sight are the L1B altitudes where, in every channel, the values
+        are finite and no pixel saturated.
+
+        Noise biases dolp upward, by about dolp_noise² / (2 dolp), which L2 does
+        not model yet. By default dolp is passed on as it is. Given
+        ``max_dolp_noise``, each channel and altitude where dolp_noise exceeds it
+        has its dolp_noise set to ``IGNORED_NOISE``, so that L2 effectively
+        ignores that dolp while keeping the radiance. Deciding cell by cell lets a
+        channel that is dark low in the limb keep its dolp higher up, and the
+        decision uses only the noise estimate, not the measured dolp. This is off
+        by default because ignoring the top dolp weakens the constraint on median
+        radius in the current L2 retrieval; handling the bias belongs in L2.
+
+        The geometry, reported at the reference altitudes, is interpolated to each
+        altitude and averaged over the channels, which are observed seconds apart.
+        """
+        cell = l1b.isel(observation_set=observation_set, across_track=across_track)
+        usable = (
+            np.isfinite(cell["radiance"])
+            & np.isfinite(cell["dolp"])
+            & (cell["saturated_fraction"] == 0)
+        ).all("wavelength")
+        cell = cell.isel(altitude=usable.to_numpy())
+        altitude = cell["altitude"].to_numpy()
+
+        dolp_noise = cell["dolp_noise"].transpose("wavelength", "altitude").to_numpy()
+        if max_dolp_noise is not None:
+            dolp_noise = np.where(
+                dolp_noise > max_dolp_noise, IGNORED_NOISE, dolp_noise
+            )
+
+        reference_altitude = cell["reference_altitude"].to_numpy()
+
+        def along_los(name, wrap_at=None):
+            """Average over channels and interpolate to each altitude.
+
+            Angles that wrap (``wrap_at`` is 180 or 360) are averaged as unit
+            vectors and interpolated unwrapped, so that, for example, 179 and
+            -179 give 180 rather than 0.
+            """
+            values = cell[name].transpose("wavelength", "reference_altitude").to_numpy()
+            if wrap_at is None:
+                return np.interp(altitude, reference_altitude, values.mean(axis=0))
+            mean = np.angle(np.exp(1j * np.deg2rad(values)).mean(axis=0))
+            interpolated = np.rad2deg(
+                np.interp(altitude, reference_altitude, np.unwrap(mean))
+            )
+            return (interpolated + 360.0 - wrap_at) % 360.0 - (360.0 - wrap_at)
+
+        geometry = {
+            "tangent_altitude": altitude,
+            "tangent_latitude": along_los("tangent_latitude"),
+            "tangent_longitude": along_los("tangent_longitude", wrap_at=180),
+            "sample_wavelengths_nm": cell["wavelength"].to_numpy(),
+            "time": pd.to_datetime(cell["time"].min().to_numpy()),
+            "observer_latitude": float(cell["spacecraft_latitude"].mean()),
+            "observer_longitude": _circular_mean_deg(cell["spacecraft_longitude"]),
+            "observer_altitude": float(cell["spacecraft_altitude"].mean()),
+            "sza": along_los("solar_zenith_angle"),
+            "saa": along_los("relative_solar_azimuth_angle", wrap_at=180),
+            "los_azimuth_angle": along_los("los_azimuth_angle", wrap_at=360),
+        }
+        noise = {
+            "radiance": cell["radiance_noise"]
+            .transpose("wavelength", "altitude")
+            .to_numpy(),
+            "dolp": dolp_noise,
+        }
+        spectra = {
+            state: L1bSpectra.from_np_arrays(
+                radiance=cell[value].transpose("wavelength", "altitude").to_numpy(),
+                radiance_noise=noise[value],
+                **geometry,
+            )
+            for state, value in (("I", "radiance"), ("dolp", "dolp"))
+        }
+        return cls(spectra, low_alt=low_alt, high_alt=high_alt)
 
     @property
     def spectra(self):

@@ -8,6 +8,13 @@ from datetime import datetime
 import numpy as np
 import pytest
 
+from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
+from aliprocessing.forward_model import (
+    exponential_scene,
+    exposure_for_fill,
+    observation_sequence,
+)
+from aliprocessing.geometry import boresight_elevation_for_tangent_altitude
 from aliprocessing.l1b.data import L1bSpectra
 
 # Includes one line of sight below the default lower bound and one above the default upper bound
@@ -48,3 +55,65 @@ def make_spectra():
         )
 
     return _make_spectra
+
+
+# ------------------------------------------------- simple instrument model
+SMALL_INSTRUMENT_KWARGS = {
+    "rows_per_subimage": 40,
+    "gap_rows": 4,
+    "num_columns": 48,
+    "horizontal_ifov_deg": 0.08,
+    "center_wavelengths_nm": (745.0, 1020.0),
+    "altitude_grid": (0.0, 50e3, 1000.0),
+    "reference_altitudes": (10e3, 25e3, 40e3),
+    "across_track_half_width_deg": 1.6,
+    "num_across_track_bins": 4,
+}
+SPACECRAFT = {
+    "spacecraft_latitude": 40.0,
+    "spacecraft_longitude": -100.0,
+    "spacecraft_altitude": 500e3,
+    "boresight_azimuth": 90.0,
+}
+
+
+@pytest.fixture(scope="session")
+def small_instrument():
+    return SimpleInstrument(**SMALL_INSTRUMENT_KWARGS)
+
+
+@pytest.fixture(scope="session")
+def small_cal_db(small_instrument):
+    return simulated_cal_db(small_instrument)
+
+
+@pytest.fixture(scope="session")
+def limb_scene(small_cal_db):
+    return exponential_scene(small_cal_db, radiance_at_zero=[0.05, 0.03], q=0.1, u=0.03)
+
+
+@pytest.fixture(scope="session")
+def make_frames(small_cal_db, small_instrument, limb_scene):
+    """Frames for ``num_sets`` observation sets, pointed to centre the coverage."""
+
+    elevation = boresight_elevation_for_tangent_altitude(
+        SPACECRAFT["spacecraft_latitude"],
+        SPACECRAFT["spacecraft_longitude"],
+        SPACECRAFT["spacecraft_altitude"],
+        SPACECRAFT["boresight_azimuth"],
+        small_instrument.boresight_tangent_altitude,
+    )
+    exposure = exposure_for_fill(small_cal_db, limb_scene)
+
+    def _make_frames(num_sets=1, **kwargs):
+        options = {
+            "start": "2026-06-21T18:00",
+            "num_sets": num_sets,
+            "exposure_time": exposure,
+            "boresight_elevation": elevation,
+            **SPACECRAFT,
+            **kwargs,
+        }
+        return observation_sequence(small_cal_db, **options)
+
+    return _make_frames

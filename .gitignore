@@ -170,3 +170,6 @@ uv.lock
 src/aliprocessing/_version.py
 
 *.DS_Store*
+
+# Generated from the YAML schemas at docs build time
+docs/source/formats/generated/

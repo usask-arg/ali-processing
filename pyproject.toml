@@ -7,7 +7,7 @@ name = "aliprocessing"
 dynamic = ["version"]
 description="Aerosol Limb Imager processing code"
 readme = "README.md"
-dependencies = ["numpy", "sasktran2", "skretrieval>=2026.10.0", "xarray"]
+dependencies = ["numpy", "pandas", "pyyaml", "sasktran2", "skretrieval>=2026.10.0", "xarray"]
 authors = [
     { name = "Landon Rieger", email = "landon.rieger@usask.ca" },
     { name = "Daniel Zawada", email = "daniel.zawada@usask.ca"}
@@ -34,6 +34,7 @@ version_file = "src/aliprocessing/_version.py"
 minversion = "6.0"
 addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
+markers = ["slow: takes tens of seconds; skip with -m 'not slow'"]
 filterwarnings = [
     "ignore:(ast.Str|Attribute s|ast.NameConstant|ast.Num) is deprecated:DeprecationWarning:_pytest",  # Python 3.12
 ]
