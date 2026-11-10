@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from conftest import SMALL_INSTRUMENT_KWARGS
+from conftest import SMALL_INSTRUMENT_KWARGS, SPACECRAFT
 
 from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
 from aliprocessing.forward_model import exposure_for_fill, simulate_l1a
+from aliprocessing.geometry import boresight_elevation_for_tangent_altitude
 from aliprocessing.instrument import static_dark
 from aliprocessing.l1b.data import L1bImage
 from aliprocessing.processing.l1a_to_l1b import process_l1a_to_l1b
@@ -219,3 +220,49 @@ def test_l1b_image_drops_altitudes_outside_the_field_of_view(noiseless_l1b):
     tangent_altitude = image.spectra["I"].ds["tangent_altitude"]
     assert float(tangent_altitude.min()) == 3e3
     assert tangent_altitude.size == 48
+
+
+def test_l1b_image_handles_wrapping_angles(noiseless_l1b):
+    # Viewing away from the sun near the dateline, looking north: every angle
+    # sits next to its wrap point, and differs between channels and altitudes
+    l1b = noiseless_l1b.copy(deep=True)
+    shape = l1b["relative_solar_azimuth_angle"].shape
+    alternating = np.where(np.indices(shape).sum(axis=0) % 2 == 0, 1.0, -1.0)
+    l1b["relative_solar_azimuth_angle"][:] = 179.5 * alternating
+    l1b["tangent_longitude"][:] = 179.8 * alternating
+    l1b["los_azimuth_angle"][:] = np.where(alternating > 0, 359.6, 0.4)
+
+    ds = L1bImage.from_l1b(l1b, 0, 2).spectra["I"].ds
+    assert np.all(np.abs(ds["relative_solar_azimuth_angle"]) > 179)
+    assert np.all(np.abs(ds["tangent_longitude"]) > 179)
+    los_azimuth = ds["los_azimuth_angle"].to_numpy()
+    assert np.all((los_azimuth < 1) | (los_azimuth > 359))
+    assert np.all((los_azimuth >= 0) & (los_azimuth < 360))
+
+
+def test_frame_pointed_above_the_grid_gives_nan(small_cal_db, limb_scene, make_frames):
+    # Boresight at 200 km: no pixel is near the 0-50 km grid
+    elevation = boresight_elevation_for_tangent_altitude(
+        SPACECRAFT["spacecraft_latitude"],
+        SPACECRAFT["spacecraft_longitude"],
+        SPACECRAFT["spacecraft_altitude"],
+        SPACECRAFT["boresight_azimuth"],
+        200e3,
+    )
+    l1a = simulate_l1a(
+        small_cal_db,
+        limb_scene,
+        make_frames(boresight_elevation=elevation),
+        noise=False,
+    )
+    l1b = process_l1a_to_l1b(l1a, small_cal_db)
+    assert np.isnan(l1b["radiance"]).all()
+    assert np.isfinite(l1b["tangent_latitude"]).all()
+
+
+def test_granule_of_blank_frames_is_rejected(small_cal_db, limb_scene, make_frames):
+    frames = make_frames()
+    blank = frames.isel(time=np.flatnonzero(frames["spectral_channel"].to_numpy() < 0))
+    l1a = simulate_l1a(small_cal_db, limb_scene, blank, noise=False)
+    with pytest.raises(ValueError, match="no observation sets"):
+        process_l1a_to_l1b(l1a, small_cal_db)

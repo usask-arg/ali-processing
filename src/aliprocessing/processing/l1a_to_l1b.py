@@ -21,14 +21,15 @@ from aliprocessing.geometry import (
 )
 from aliprocessing.instrument import (
     DarkModel,
+    across_track_bin,
     detector_variance,
     electron_rate_per_radiance,
+    instrument_sensitivities,
     pixel_array,
+    rotate_sensitivities,
     static_dark,
-    stokes_sensitivities,
 )
 from aliprocessing.schemas import apply_metadata, check
-from aliprocessing.schemas._constraints import across_track_bin
 
 _CELL_VARIABLES = (
     "radiance",
@@ -88,6 +89,9 @@ def process_l1a_to_l1b(
     channel = l1a["spectral_channel"].to_numpy()
     obs_set = l1a["observation_set"].to_numpy()
     set_ids = np.unique(obs_set[channel >= 0])
+    if set_ids.size == 0:
+        msg = "the L1A granule has no observation sets, only blank frames"
+        raise ValueError(msg)
     num_channels = cal_db.sizes["spectral_channel"]
 
     cells = {name: [] for name in _CELL_VARIABLES}
@@ -162,6 +166,11 @@ class _PixelLayout:
     num_analyzers: int
     num_bins: int
     bin_centers: np.ndarray
+    # Per spectral channel, for the used pixels: electrons per second per unit
+    # radiance, and the instrument-frame Q and U sensitivities
+    electron_rate: list[np.ndarray]
+    q_sensitivity: list[np.ndarray]
+    u_sensitivity: list[np.ndarray]
 
     @classmethod
     def from_cal_db(cls, cal_db: xr.Dataset) -> _PixelLayout:
@@ -170,6 +179,8 @@ class _PixelLayout:
         edges = cal_db["across_track_edge"].to_numpy()
         bins = across_track_bin(azimuth, edges)
         used = (analyzer >= 0) & (bins >= 0)
+        channels = range(cal_db.sizes["spectral_channel"])
+        sensitivities = [instrument_sensitivities(cal_db, w) for w in channels]
         return cls(
             used=used,
             analyzer=analyzer[used],
@@ -179,6 +190,11 @@ class _PixelLayout:
             num_analyzers=cal_db.sizes["analyzer"],
             num_bins=len(edges) - 1,
             bin_centers=0.5 * (edges[:-1] + edges[1:]),
+            electron_rate=[
+                electron_rate_per_radiance(cal_db, w)[used] for w in channels
+            ],
+            q_sensitivity=[a[used] for a, _ in sensitivities],
+            u_sensitivity=[b[used] for _, b in sensitivities],
         )
 
 
@@ -190,24 +206,16 @@ def _process_frame(frame, channel, cal_db, layout, dark):
     image = frame["image"].transpose("detector_row", "detector_column").to_numpy()
 
     # 1. Calibrate each pixel to m = I + a' Q + b' U, in radiance units
-    scale = gain / (exposure_time * electron_rate_per_radiance(cal_db, channel))
-    signal = ((image - dark(frame, cal_db)) * scale)[used]
-    variance = (detector_variance(image, cal_db, num_exposures) * scale**2)[used]
+    scale = gain / (exposure_time * layout.electron_rate[channel])
+    signal = (image - dark(frame, cal_db))[used] * scale
+    variance = detector_variance(image, cal_db, num_exposures)[used] * scale**2
 
-    instrument = InstrumentFrame.from_attitude(
-        *(
-            float(frame[name])
-            for name in (
-                "spacecraft_latitude",
-                "spacecraft_longitude",
-                "spacecraft_altitude",
-                "boresight_azimuth_angle",
-                "boresight_elevation_angle",
-                "boresight_roll_angle",
-            )
-        )
+    instrument = InstrumentFrame.from_l1a_frame(frame)
+    a, b = rotate_sensitivities(
+        layout.q_sensitivity[channel],
+        layout.u_sensitivity[channel],
+        instrument.roll_rad,
     )
-    a, b = (s[used] for s in stokes_sensitivities(cal_db, channel, instrument.roll_rad))
     if "saturated" in frame:
         saturated = (
             frame["saturated"]
@@ -302,8 +310,9 @@ def _resample(
         (inside,) = np.nonzero(index < high)
         pixels.append(inside)
         cells.append(group[inside] * num_grid + index[inside])
-    pixel = np.concatenate(pixels)
-    cell = np.concatenate(cells)
+    # No pixel near the grid (for example off-nominal pointing): every cell is NaN
+    pixel = np.concatenate(pixels) if pixels else np.zeros(0, dtype=int)
+    cell = np.concatenate(cells) if cells else np.zeros(0, dtype=int)
     offset = altitude[pixel] - grid[cell % num_grid]
     weight = 1.0 - np.abs(offset) / half_width
 

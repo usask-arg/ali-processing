@@ -74,8 +74,9 @@ def test_look_at_tangent_altitude(frame):
 
 def test_look_at_unreachable_altitude_raises(frame):
     sphere = LocalSphere.at_tangent_point(frame.observer, frame.boresight)
-    with pytest.raises(ValueError, match="outside"):
-        look_at_tangent_altitude(frame, sphere, 0.0, np.array([400e3]))
+    # Above the spacecraft
+    with pytest.raises(ValueError, match="not reachable"):
+        look_at_tangent_altitude(frame, sphere, 0.0, np.array([1000e3]))
 
 
 def test_boresight_elevation_for_tangent_altitude():

@@ -66,6 +66,23 @@ class InstrumentFrame:
             roll_rad=float(roll),
         )
 
+    @classmethod
+    def from_l1a_frame(cls, frame) -> InstrumentFrame:
+        """Build the frame from one L1A frame's position and attitude variables."""
+        return cls.from_attitude(
+            *(
+                float(frame[name])
+                for name in (
+                    "spacecraft_latitude",
+                    "spacecraft_longitude",
+                    "spacecraft_altitude",
+                    "boresight_azimuth_angle",
+                    "boresight_elevation_angle",
+                    "boresight_roll_angle",
+                )
+            )
+        )
+
     def look_vectors(
         self, azimuth_angle: np.ndarray, elevation_angle: np.ndarray
     ) -> np.ndarray:
@@ -94,10 +111,16 @@ class LocalSphere:
         radius, offset = geodetic.osculating_spheroid()
         return cls(center=np.asarray(offset), radius=float(radius))
 
+    def distance_to_tangent_point(
+        self, observer: np.ndarray, look: np.ndarray
+    ) -> np.ndarray:
+        """Distance along each look vector to the tangent point; negative behind."""
+        return -(look @ (observer - self.center))
+
     def tangent_altitude(self, observer: np.ndarray, look: np.ndarray) -> np.ndarray:
         """Geometric tangent altitude of each look vector in ``look`` (..., 3)."""
         relative = observer - self.center
-        distance = -(look @ relative)
+        distance = self.distance_to_tangent_point(observer, look)
         closest = relative + distance[..., np.newaxis] * look
         return np.linalg.norm(closest, axis=-1) - self.radius
 
@@ -146,22 +169,31 @@ def look_at_tangent_altitude(
     sphere: LocalSphere,
     azimuth_angle: float,
     altitudes: np.ndarray,
-    elevation_search_deg: float = 5.0,
-    num_search: int = 4001,
+    elevation_search_deg: float = 15.0,
+    num_search: int = 6001,
 ) -> np.ndarray:
     """Look vectors at ``azimuth_angle`` whose tangent altitudes are ``altitudes``.
 
     Searches the image column at that azimuth field angle, within
-    ±``elevation_search_deg`` of the boresight, using the local sphere. Returns an
-    array of shape (len(altitudes), 3).
+    ±``elevation_search_deg`` of the boresight, using the local sphere. Only
+    lines of sight whose tangent point is in front of the observer are used, so
+    tangent altitude increases with elevation. Returns an array of shape
+    (len(altitudes), 3); raises ValueError if an altitude is not reachable.
     """
     elevation = np.linspace(-elevation_search_deg, elevation_search_deg, num_search)
     looks = frame.look_vectors(np.full_like(elevation, azimuth_angle), elevation)
+    in_front = sphere.distance_to_tangent_point(frame.observer, looks) > 0
+    elevation, looks = elevation[in_front], looks[in_front]
     tangent_altitude = sphere.tangent_altitude(frame.observer, looks)
-    # Tangent altitude increases with elevation angle across the limb
+    if not np.all(np.diff(tangent_altitude) > 0):
+        msg = "tangent altitude does not increase with elevation for this pointing"
+        raise ValueError(msg)
     found = np.interp(altitudes, tangent_altitude, elevation, left=np.nan, right=np.nan)
     if np.any(np.isnan(found)):
-        msg = f"altitudes {altitudes} are outside the searched elevation range"
+        msg = (
+            f"altitudes {np.asarray(altitudes)[np.isnan(found)]} are not reachable "
+            f"within ±{elevation_search_deg} degrees of the boresight"
+        )
         raise ValueError(msg)
     return frame.look_vectors(np.full_like(found, azimuth_angle), found)
 

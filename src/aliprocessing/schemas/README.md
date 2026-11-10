@@ -9,8 +9,11 @@ validation code and the documentation pages are generated from it.
 | `l1b.yaml`    | L1B calibrated radiance and polarization on an altitude grid  |
 | `cal_db.yaml` | Calibration database: instrument characterization             |
 
-These are **drafts** (`status: draft`) of the target formats. The processing code
-and the simulator have not yet been changed to match them.
+These are **drafts** (`status: draft`) of the target formats. The simple
+instrument model follows them: `aliprocessing.forward_model` writes L1A,
+`aliprocessing.cal_db` builds a placeholder calibration database, and
+`aliprocessing.processing.l1a_to_l1b` reads both and writes L1B, checking each
+against its schema. The simulator package has not been changed to match yet.
 
 ## Instrument summary
 

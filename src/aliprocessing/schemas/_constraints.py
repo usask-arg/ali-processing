@@ -12,6 +12,8 @@ from collections.abc import Callable
 import numpy as np
 import xarray as xr
 
+from aliprocessing.instrument import across_track_bin
+
 # Largest condition number of the analyzer matrix [1, a, b] accepted by the
 # demodulable constraint. Ideal analyzers at -60, 0 and 60 degrees give sqrt(2).
 MAX_DEMODULATION_CONDITION = 100.0
@@ -60,15 +62,6 @@ def _has(ds: xr.Dataset, *names: str) -> bool:
 def _ids(mask: np.ndarray, ids: np.ndarray | None = None) -> str:
     ids = np.flatnonzero(mask) if ids is None else ids[mask]
     return ", ".join(str(i) for i in ids)
-
-
-def across_track_bin(azimuth: np.ndarray, edges: np.ndarray) -> np.ndarray:
-    """Across-track bin of each pixel azimuth, or -1 outside every bin.
-
-    Bins are half-open, [edges[j], edges[j + 1]). NaN azimuths are outside.
-    """
-    index = np.digitize(azimuth, edges) - 1
-    return np.where((index >= 0) & (index < len(edges) - 1), index, -1)
 
 
 def _strictly_increasing(*names: str) -> Check:

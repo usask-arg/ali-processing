@@ -13,9 +13,10 @@ import xarray as xr
 from aliprocessing.geometry import InstrumentFrame, LocalSphere
 from aliprocessing.instrument import (
     electron_rate_per_radiance,
+    instrument_sensitivities,
     pixel_array,
+    rotate_sensitivities,
     saturation_counts,
-    stokes_sensitivities,
 )
 from aliprocessing.schemas import apply_metadata
 
@@ -78,6 +79,7 @@ def simulate_l1a(
     }
 
     images, noiseless, saturated = [], [], []
+    calibration = {}
     for i in range(frames.sizes["time"]):
         frame = frames.isel(time=i)
         exposure_time = float(frame["exposure_time"])
@@ -86,7 +88,7 @@ def simulate_l1a(
 
         expected = exposure_time * dark_rate * gain
         if channel >= 0:
-            instrument = _instrument_frame(frame)
+            instrument = InstrumentFrame.from_l1a_frame(frame)
             looks = instrument.look_vectors(azimuth, elevation)
             sphere = LocalSphere.at_tangent_point(
                 instrument.observer, instrument.boresight
@@ -96,9 +98,13 @@ def simulate_l1a(
                 np.interp(tangent_altitude, scene_altitude, stokes[name][channel])
                 for name in ("I", "Q", "U")
             )
-            a, b = stokes_sensitivities(cal_db, channel, instrument.roll_rad)
-            signal = I + a[used] * Q + b[used] * U
-            rate = electron_rate_per_radiance(cal_db, channel)[used]
+            if channel not in calibration:
+                a, b = instrument_sensitivities(cal_db, channel)
+                rate = electron_rate_per_radiance(cal_db, channel)
+                calibration[channel] = (a[used], b[used], rate[used])
+            a, b, rate = calibration[channel]
+            a, b = rotate_sensitivities(a, b, instrument.roll_rad)
+            signal = I + a * Q + b * U
             expected = expected.copy()
             expected[used] += exposure_time * rate * signal
 
@@ -146,17 +152,6 @@ def _digitize(electrons, offset, gain, full_well, adc_max):
     counts = offset + np.clip(electrons, None, full_well) / gain
     adc_full = counts >= adc_max
     return np.clip(counts, 0, adc_max), full | adc_full
-
-
-def _instrument_frame(frame: xr.Dataset) -> InstrumentFrame:
-    return InstrumentFrame.from_attitude(
-        float(frame["spacecraft_latitude"]),
-        float(frame["spacecraft_longitude"]),
-        float(frame["spacecraft_altitude"]),
-        float(frame["boresight_azimuth_angle"]),
-        float(frame["boresight_elevation_angle"]),
-        float(frame["boresight_roll_angle"]),
-    )
 
 
 def observation_sequence(

@@ -63,6 +63,12 @@ class L1bSpectra:
         return self._ds
 
 
+def _circular_mean_deg(angles) -> float:
+    """Mean of angles in degrees, in [-180, 180)."""
+    mean = np.angle(np.exp(1j * np.deg2rad(np.asarray(angles))).mean())
+    return float((np.rad2deg(mean) + 180.0) % 360.0 - 180.0)
+
+
 class L1bImage(Observation):
     def __init__(self, spectra: dict[xr.Dataset], low_alt=0, high_alt=100000):
         self._spectra = spectra
@@ -93,30 +99,36 @@ class L1bImage(Observation):
         cell = cell.isel(altitude=finite)
         altitude = cell["altitude"].to_numpy()
 
-        def along_los(name):
-            values = cell[name].mean("wavelength")
-            return np.interp(altitude, cell["reference_altitude"], values)
+        reference_altitude = cell["reference_altitude"].to_numpy()
 
-        # Circular mean, since the angle wraps at ±180
-        relative_azimuth = np.rad2deg(
-            np.angle(
-                np.exp(1j * np.deg2rad(cell["relative_solar_azimuth_angle"]))
-                .mean("wavelength")
-                .to_numpy()
+        def along_los(name, wrap_at=None):
+            """Average over channels and interpolate to each altitude.
+
+            Angles that wrap (``wrap_at`` is 180 or 360) are averaged as unit
+            vectors and interpolated unwrapped, so that, for example, 179 and
+            -179 give 180 rather than 0.
+            """
+            values = cell[name].transpose("wavelength", "reference_altitude").to_numpy()
+            if wrap_at is None:
+                return np.interp(altitude, reference_altitude, values.mean(axis=0))
+            mean = np.angle(np.exp(1j * np.deg2rad(values)).mean(axis=0))
+            interpolated = np.rad2deg(
+                np.interp(altitude, reference_altitude, np.unwrap(mean))
             )
-        )
+            return (interpolated + 360.0 - wrap_at) % 360.0 - (360.0 - wrap_at)
+
         geometry = {
             "tangent_altitude": altitude,
             "tangent_latitude": along_los("tangent_latitude"),
-            "tangent_longitude": along_los("tangent_longitude"),
+            "tangent_longitude": along_los("tangent_longitude", wrap_at=180),
             "sample_wavelengths_nm": cell["wavelength"].to_numpy(),
             "time": pd.to_datetime(cell["time"].min().to_numpy()),
             "observer_latitude": float(cell["spacecraft_latitude"].mean()),
-            "observer_longitude": float(cell["spacecraft_longitude"].mean()),
+            "observer_longitude": _circular_mean_deg(cell["spacecraft_longitude"]),
             "observer_altitude": float(cell["spacecraft_altitude"].mean()),
             "sza": along_los("solar_zenith_angle"),
-            "saa": np.interp(altitude, cell["reference_altitude"], relative_azimuth),
-            "los_azimuth_angle": along_los("los_azimuth_angle"),
+            "saa": along_los("relative_solar_azimuth_angle", wrap_at=180),
+            "los_azimuth_angle": along_los("los_azimuth_angle", wrap_at=360),
         }
         spectra = {
             state: L1bSpectra.from_np_arrays(

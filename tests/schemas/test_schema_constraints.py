@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from aliprocessing.instrument import across_track_bin
 from aliprocessing.schemas import (
     CONSTRAINT_CHECKS,
     DEFERRED_CONSTRAINTS,
@@ -10,10 +11,7 @@ from aliprocessing.schemas import (
     load_schema,
     validate,
 )
-from aliprocessing.schemas._constraints import (
-    MAX_DEMODULATION_CONDITION,
-    across_track_bin,
-)
+from aliprocessing.schemas._constraints import MAX_DEMODULATION_CONDITION
 
 
 def _constraint_failures(issues):

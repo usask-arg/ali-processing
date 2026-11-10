@@ -171,7 +171,7 @@ def simulated_cal_db(
     aperture_area = np.pi * (instrument.aperture_diameter / 2) ** 2
     radius = np.hypot(
         azimuth / np.nanmax(np.abs(azimuth_columns)),
-        elevation / np.nanmax(np.abs(elevation_rows)),
+        elevation / np.max(np.abs(elevation_rows[row_in_subimage >= 0])),
     ) / np.sqrt(2)
     etendue = (
         aperture_area

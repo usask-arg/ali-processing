@@ -63,14 +63,42 @@ def electron_rate_per_radiance(cal_db: xr.Dataset, channel: int) -> np.ndarray:
     )
 
 
+def instrument_sensitivities(
+    cal_db: xr.Dataset, channel: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Each pixel's response to Q and U in the instrument frame, a and b."""
+    return tuple(
+        cal_db[name].isel(spectral_channel=channel).transpose(*_PIXEL_DIMS).to_numpy()
+        for name in ("q_sensitivity", "u_sensitivity")
+    )
+
+
+def rotate_sensitivities(
+    a: np.ndarray, b: np.ndarray, roll_rad: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Rotate instrument-frame sensitivities into the Stokes frame for a roll.
+
+    The roll turns the instrument up axis clockwise from the vertical, so an
+    analyzer at theta is at theta + roll in the Stokes frame.
+    """
+    cos2, sin2 = np.cos(2 * roll_rad), np.sin(2 * roll_rad)
+    return a * cos2 - b * sin2, a * sin2 + b * cos2
+
+
 def stokes_sensitivities(
     cal_db: xr.Dataset, channel: int, roll_rad: float
 ) -> tuple[np.ndarray, np.ndarray]:
     """Each pixel's response to Q and U in the Stokes frame, a' and b'."""
-    a = pixel_array(cal_db, "q_sensitivity")[channel]
-    b = pixel_array(cal_db, "u_sensitivity")[channel]
-    cos2, sin2 = np.cos(2 * roll_rad), np.sin(2 * roll_rad)
-    return a * cos2 - b * sin2, a * sin2 + b * cos2
+    return rotate_sensitivities(*instrument_sensitivities(cal_db, channel), roll_rad)
+
+
+def across_track_bin(azimuth: np.ndarray, edges: np.ndarray) -> np.ndarray:
+    """Across-track bin of each pixel azimuth, or -1 outside every bin.
+
+    Bins are half-open, [edges[j], edges[j + 1]). NaN azimuths are outside.
+    """
+    index = np.digitize(azimuth, edges) - 1
+    return np.where((index >= 0) & (index < len(edges) - 1), index, -1)
 
 
 def static_dark(frame: xr.Dataset, cal_db: xr.Dataset) -> np.ndarray:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from conftest import SMALL_INSTRUMENT_KWARGS
 
 from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
 from aliprocessing.forward_model import simulate_l1a
@@ -165,3 +166,19 @@ def test_photon_weighted_throughput_of_a_gaussian(small_cal_db, small_instrument
     np.testing.assert_allclose(
         photon_weighted_throughput(small_cal_db), expected, rtol=1e-6
     )
+
+
+def test_vignetting_reaches_its_stated_value_at_the_corners():
+    instrument = SimpleInstrument(
+        **{**SMALL_INSTRUMENT_KWARGS, "pixel_response_nonuniformity": 0.0}
+    )
+    etendue = pixel_array(simulated_cal_db(instrument), "pixel_etendue")
+    unvignetted = (
+        np.pi
+        * (instrument.aperture_diameter / 2) ** 2
+        * np.deg2rad(instrument.vertical_ifov_deg)
+        * np.deg2rad(instrument.horizontal_ifov_deg)
+    )
+    # Row 0 and the last column of the first sub-image is a corner
+    corner = etendue[0, -1] / unvignetted
+    assert corner == pytest.approx(1 - instrument.vignetting, rel=1e-9)
