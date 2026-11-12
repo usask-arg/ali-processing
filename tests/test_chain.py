@@ -20,6 +20,7 @@ from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
 from aliprocessing.forward_model import (
     exposure_for_fill,
     observation_sequence,
+    scene_from_radiance,
     simulate_l1a,
 )
 from aliprocessing.geometry import (
@@ -32,6 +33,7 @@ from aliprocessing.l1b.data import L1bImage
 from aliprocessing.l2.optical import aerosol_median_radius_db
 from aliprocessing.processing.l1a_to_l1b import process_l1a_to_l1b
 from aliprocessing.processing.l1b_to_l2 import process_l1b_to_l2_image
+from aliprocessing.solar import ChannelSolarIrradiance
 
 START = "2026-06-21T16:00"
 ATMOSPHERE_ALTITUDES = np.arange(0.0, 65001.0, 1000.0)
@@ -55,6 +57,36 @@ CHAIN_INSTRUMENT = SimpleInstrument(
         "altitude_grid": (0.0, 50e3, 500.0),
     }
 )
+
+
+def _band_averaged_solar_irradiance(cal_db):
+    """The TSIS-1 HSRS solar irradiance averaged through each channel's SRF.
+
+    Written out here from the native spectrum rather than calling the library,
+    as an independent check of ChannelSolarIrradiance.
+    """
+    path = sk.database.StandardDatabase().path(
+        "solar/solar_irradiance_hsrs_2022_11_30_extended.nc"
+    )
+    with xr.open_dataset(path) as solar:
+        wavelength = solar["wavelength"].to_numpy()
+        irradiance = solar["irradiance"].to_numpy()
+    throughput_wavelength = cal_db["throughput_wavelength"].to_numpy()
+    band = (wavelength >= throughput_wavelength[0]) & (
+        wavelength <= throughput_wavelength[-1]
+    )
+    wavelength, irradiance = wavelength[band], irradiance[band]
+
+    averages = []
+    for throughput in cal_db["spectral_throughput"].to_numpy():
+        photon_weight = (
+            np.interp(wavelength, throughput_wavelength, throughput) * wavelength
+        )
+        averages.append(
+            np.trapezoid(photon_weight * irradiance, wavelength)
+            / np.trapezoid(photon_weight, wavelength)
+        )
+    return np.array(averages)
 
 
 def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
@@ -103,20 +135,12 @@ def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
         median_radius=np.full(len(ATMOSPHERE_ALTITUDES), TRUE_MEDIAN_RADIUS),
     )
     atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
-    atmosphere["solar_irradiance"] = sk.constituent.SolarIrradiance(
-        mode="average", resolution=1
-    )
-    radiance = (
-        sk.Engine(config, geometry, viewing)
-        .calculate_radiance(atmosphere)["radiance"]
-        .transpose("wavelength", "los", "stokes")
-        .to_numpy()
-    )
-
-    dims = ["spectral_channel", "altitude"]
-    scene = xr.Dataset(
-        {name: (dims, radiance[..., i]) for i, name in enumerate("IQU")},
-        coords={"altitude": FER_TANGENT_ALTITUDES},
+    # The solar constituent L2 uses, as a simulator would at the channel centres
+    atmosphere["solar_irradiance"] = ChannelSolarIrradiance(cal_db)
+    scene = scene_from_radiance(
+        cal_db,
+        sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere),
+        FER_TANGENT_ALTITUDES,
     )
     pressure_temperature = xr.Dataset(
         {
@@ -170,7 +194,7 @@ def test_chain_returns_the_atmosphere():
     # The bin next to the boresight
     image = L1bImage.from_l1b(l1b, 0, 1, low_alt=8e3, high_alt=46e3)
     state = process_l1b_to_l2_image(
-        image, pressure_temperature, None, minimizer_kwargs={"verbose": 0}
+        image, pressure_temperature, cal_db, minimizer_kwargs={"verbose": 0}
     )
 
     altitude_dim = state["stratospheric_aerosol_extinction_per_m"].dims[0]
@@ -187,3 +211,12 @@ def test_chain_returns_the_atmosphere():
         state["stratospheric_aerosol_median_radius"].interp({altitude_dim: 20e3})
     )
     assert median_radius == pytest.approx(TRUE_MEDIAN_RADIUS, rel=0.2)
+
+
+def test_channel_solar_irradiance_matches_the_native_spectrum():
+    cal_db = simulated_cal_db(CHAIN_INSTRUMENT)
+    np.testing.assert_allclose(
+        ChannelSolarIrradiance(cal_db).irradiance,
+        _band_averaged_solar_irradiance(cal_db),
+        rtol=1e-4,
+    )

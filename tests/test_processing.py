@@ -30,7 +30,9 @@ def por_image():
 
 
 @pytest.mark.parametrize("pol_state", ["dolp", "aolp", "q"])
-def test_process_l1b_to_l2_image_smoke(make_spectra, por_image, pol_state):
+def test_process_l1b_to_l2_image_smoke(
+    make_spectra, por_image, pol_state, small_cal_db
+):
     # Exercises the full retrieval pipeline for a couple of iterations; checks that everything is
     # wired together and the outputs are well formed, not that the retrieval converges
     nlos = len(TANGENT_ALTITUDES)
@@ -47,7 +49,7 @@ def test_process_l1b_to_l2_image_smoke(make_spectra, por_image, pol_state):
     )
 
     state = process_l1b_to_l2_image(
-        image, por_image, None, minimizer_kwargs={"max_nfev": 2}
+        image, por_image, small_cal_db, minimizer_kwargs={"max_nfev": 2}
     )
 
     assert 1 <= int(state["num_iterations"]) <= 2

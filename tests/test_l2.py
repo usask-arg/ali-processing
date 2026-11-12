@@ -8,9 +8,10 @@ import sasktran2 as sk
 
 from aliprocessing.l2.ancillary import Ancillary
 from aliprocessing.l2.optical import aerosol_median_radius_db
+from aliprocessing.solar import ChannelSolarIrradiance
 
 
-def test_ancillary_adds_rayleigh_and_solar_irradiance():
+def test_ancillary_adds_rayleigh_and_solar_irradiance(small_cal_db):
     altitudes = np.arange(0.0, 65001.0, 1000.0)
     geometry = sk.Geometry1D(
         0.6,
@@ -25,12 +26,17 @@ def test_ancillary_adds_rayleigh_and_solar_irradiance():
         altitudes,
         101325.0 * np.exp(-altitudes / 7000.0),
         np.full(len(altitudes), 250.0),
+        cal_db=small_cal_db,
     )
 
     anc.add_to_atmosphere(atmo)
 
     assert isinstance(atmo["rayleigh"], sk.constituent.Rayleigh)
-    assert isinstance(atmo["solar_irradiance"], sk.constituent.SolarIrradiance)
+    # The solar irradiance is averaged through the calibration database's SRF
+    solar = atmo["solar_irradiance"]
+    assert isinstance(solar, ChannelSolarIrradiance)
+    solar.add_to_atmosphere(atmo)
+    np.testing.assert_allclose(atmo.storage.solar_irradiance, solar.irradiance[:1])
 
 
 def test_aerosol_median_radius_db_clamps_single_scatter_albedo():

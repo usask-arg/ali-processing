@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import xarray as xr
 from conftest import SMALL_INSTRUMENT_KWARGS
 
 from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
-from aliprocessing.forward_model import exposure_for_fill, simulate_l1a
+from aliprocessing.forward_model import (
+    exposure_for_fill,
+    scene_from_radiance,
+    simulate_l1a,
+)
 from aliprocessing.instrument import (
     PLANCK,
     SPEED_OF_LIGHT,
@@ -222,3 +227,54 @@ def test_integer_positions_give_valid_l1a(small_cal_db, limb_scene, make_frames)
     frames = make_frames(spacecraft_latitude=40, spacecraft_longitude=-100)
     assert frames["spacecraft_latitude"].dtype.kind == "f"
     simulate_l1a(small_cal_db, limb_scene, frames, noise=False)
+
+
+# ------------------------------------------------- scenes from sasktran2
+def _sasktran_like_radiance(wavelengths, tangent_altitudes, stokes=("I", "Q", "U")):
+    """Radiance shaped like sasktran2's output, with values that encode where they
+    came from: channel centre + tangent altitude in km + Stokes index / 10."""
+    values = (
+        np.asarray(wavelengths)[:, np.newaxis, np.newaxis]
+        + np.asarray(tangent_altitudes)[np.newaxis, :, np.newaxis] / 1e3
+        + np.arange(len(stokes))[np.newaxis, np.newaxis, :] / 10
+    )
+    return xr.Dataset(
+        {"radiance": (["wavelength", "los", "stokes"], values)},
+        coords={"wavelength": wavelengths, "stokes": list(stokes)},
+    )
+
+
+def test_scene_from_radiance_orders_channels_and_altitudes(small_cal_db):
+    tangent_altitudes = np.array([20e3, 0.0, 10e3])
+    radiance = _sasktran_like_radiance([1020.0, 745.0], tangent_altitudes)
+    scene = scene_from_radiance(small_cal_db, radiance, tangent_altitudes)
+
+    np.testing.assert_array_equal(scene["altitude"], [0.0, 10e3, 20e3])
+    np.testing.assert_allclose(scene["I"].sel(altitude=10e3), [755.0, 1030.0])
+    np.testing.assert_allclose(scene["U"].sel(altitude=0.0), [745.2, 1020.2])
+    assert scene["I"].attrs["units"] == "W m-2 sr-1 nm-1"
+
+
+def test_scene_from_unpolarized_radiance(small_cal_db):
+    radiance = _sasktran_like_radiance([745.0, 1020.0], [0.0, 10e3], stokes=("I",))
+    scene = scene_from_radiance(small_cal_db, radiance["radiance"], [0.0, 10e3])
+    assert np.all(scene["Q"] == 0)
+    assert np.all(scene["U"] == 0)
+
+
+def test_scene_needs_every_channel_centre(small_cal_db):
+    with pytest.raises(ValueError, match="exactly one at each"):
+        scene_from_radiance(
+            small_cal_db, _sasktran_like_radiance([745.0, 745.0], [0.0]), [0.0]
+        )
+    with pytest.raises(ValueError, match="not channel centres"):
+        scene_from_radiance(
+            small_cal_db, _sasktran_like_radiance([745.0, 800.0], [0.0]), [0.0]
+        )
+
+
+def test_scene_needs_one_altitude_per_line_of_sight(small_cal_db):
+    with pytest.raises(ValueError, match="lines of sight"):
+        scene_from_radiance(
+            small_cal_db, _sasktran_like_radiance([745.0, 1020.0], [0.0, 1e3]), [0.0]
+        )
