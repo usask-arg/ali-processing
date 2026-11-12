@@ -1,0 +1,90 @@
+# Default settings for the ALI L1B -> L2 aerosol retrieval.
+#
+# Load with aliprocessing.l2.config.load_retrieval_config, which merges your
+# overrides (a dict or a YAML file with the same layout) into these defaults.
+# Unknown keys are rejected, except inside the `state` and `ancillary` sections,
+# which are passed to skretrieval and may hold any key it accepts. Values computed
+# from the data (the surface albedo wavelengths and the number of threads, when
+# left null) are filled in by the code.
+
+# Retrieval altitude grid: the union of these ranges (start inclusive, stop exclusive)
+altitude_grid_m:
+  - {start: 0, stop: 65001, step: 1000}
+
+# Forward model: a delta-function line shape at each channel centre
+forward_model:
+  model_res_nm: 2
+
+# One Triplet measurement per channel, built from the L1B radiance and dolp
+measurement:
+  altitude_range_m: [10000, 40000]       # tangent altitudes used in the fit
+  normalization_range_m: [40000, 45000]  # only used when normalize is true
+  normalize: false
+  log_space: false
+
+# SASKTRAN2 engine settings (sasktran2.Config attributes). Enum settings are given
+# by name. num_threads null uses one thread per channel.
+engine:
+  num_threads: null
+  num_stokes: 3
+  stokes_basis: Observer                     # a sasktran2.StokesBasis name
+  multiple_scatter_source: DiscreteOrdinates # a sasktran2.MultipleScatterSource name
+  num_streams: 8
+  init_successive_orders_with_discrete_ordinates: true
+  threading_model: Wavelength                # a sasktran2.ThreadingModel name
+  num_successive_orders_iterations: 1
+  num_sza: 1
+  input_validation_mode: Disabled            # a sasktran2.InputValidationMode name
+
+# Minimizer: skretrieval's "scipy" minimizer, which wraps scipy's least_squares
+minimizer:
+  minimizer: scipy
+  method: trf
+  xtol: 1.0e-15
+  include_bounds: true
+  max_nfev: 200
+  ftol: 1.0e-6
+  verbose: 2
+
+# Passed to the ancillary (pressure and temperature) as keyword arguments
+ancillary: {}
+
+# skretrieval state_kwargs, without altitude_grid (from altitude_grid_m)
+state:
+  absorbers:
+    o3:
+      prior_influence: 1.0e+6
+      tikh_factor: 2.5e+4
+      log_space: false
+      min_value: 0
+      max_value: 1.0e-1
+      prior: {type: mipas, value: 1.0e-6}
+  aerosols:
+    stratospheric_aerosol:
+      type: extinction_profile
+      nominal_wavelength: 745
+      retrieved_quantities:
+        extinction_per_m:
+          prior_influence: 1.0e-6
+          # Tuned for linear space; in log space the same factor regularizes
+          # log(extinction) and acts much more strongly
+          tikh_factor: 1.0e-2
+          min_value: 0
+          max_value: 1.0e-3
+          log_space: false
+        median_radius:
+          prior_influence: 1.0e-2
+          tikh_factor: 1.0e+1
+          min_value: 10
+          max_value: 589.0
+      prior:
+        extinction_per_m: {type: testing}
+        median_radius: {type: constant, value: 80}
+  surface:
+    lambertian_albedo:
+      prior_influence: 0
+      tikh_factor: 1.0e-4
+      log_space: false
+      wavelengths: null          # null uses the L1B channel centres
+      initial_value: 0.3
+      out_bounds_mode: extend

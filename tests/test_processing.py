@@ -53,8 +53,18 @@ def test_process_l1b_to_l2_image_smoke(
         image,
         por_image,
         small_cal_db,
-        extinction_log_space=extinction_log_space,
-        minimizer_kwargs={"max_nfev": 2},
+        config={
+            "minimizer": {"max_nfev": 2},
+            "state": {
+                "aerosols": {
+                    "stratospheric_aerosol": {
+                        "retrieved_quantities": {
+                            "extinction_per_m": {"log_space": extinction_log_space}
+                        }
+                    }
+                }
+            },
+        },
     )
 
     assert 1 <= int(state["num_iterations"]) <= 2
