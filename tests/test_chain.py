@@ -194,7 +194,7 @@ def test_chain_returns_the_atmosphere():
     # The bin next to the boresight
     image = L1bImage.from_l1b(l1b, 0, 1, low_alt=8e3, high_alt=46e3)
     state = process_l1b_to_l2_image(
-        image, pressure_temperature, cal_db, minimizer_kwargs={"verbose": 0}
+        image, pressure_temperature, cal_db, config={"minimizer": {"verbose": 0}}
     )
 
     altitude_dim = state["stratospheric_aerosol_extinction_per_m"].dims[0]

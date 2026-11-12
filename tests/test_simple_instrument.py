@@ -31,7 +31,7 @@ def test_full_size_placeholder_layout():
     cal_db = simulated_cal_db(instrument)
     assert cal_db.sizes["detector_row"] == 1024
     assert cal_db.sizes["detector_column"] == 1280
-    assert cal_db.sizes["spectral_channel"] == 7
+    assert cal_db.sizes["spectral_channel"] == 5
     analyzer = cal_db["pixel_analyzer"].to_numpy()
     assert [np.count_nonzero(analyzer == k) for k in range(3)] == [320 * 1280] * 3
     # The pixel rows are finer than the 250 m grid, so the kernel is the grid step

@@ -6,6 +6,7 @@ from __future__ import annotations
 import numpy as np
 import sasktran2 as sk
 
+from aliprocessing.cal_db import SimpleInstrument
 from aliprocessing.l2.ancillary import Ancillary
 from aliprocessing.l2.optical import aerosol_median_radius_db
 from aliprocessing.solar import ChannelSolarIrradiance
@@ -48,8 +49,15 @@ def test_aerosol_median_radius_db_clamps_single_scatter_albedo():
     assert float(ssa.min()) > 0.0
     np.testing.assert_array_equal(
         db._database["wavelength_nm"],
-        [470, 525, 745, 1020, 1230, 1450, 1500, 1550, 1600, 1650],
+        [470, 525, 745, 869, 1020, 1230, 1450, 1500, 1550, 1560, 1600, 1650],
     )
     np.testing.assert_array_equal(
         db._database["median_radius"], np.arange(10, 600, 10.0)
     )
+
+
+def test_aerosol_table_includes_the_default_channels():
+    # Interpolating the table between wavelengths misestimates the cross
+    # section, so every default channel centre is tabulated
+    tabulated = aerosol_median_radius_db()._database["wavelength_nm"].to_numpy()
+    assert set(SimpleInstrument().center_wavelengths_nm) <= set(tabulated.tolist())

@@ -43,15 +43,7 @@ class SimpleInstrument:
     analyzer_transmission: float = 0.4
 
     # Spectral channels: Gaussian passbands
-    center_wavelengths_nm: tuple[float, ...] = (
-        745.0,
-        820.0,
-        870.0,
-        1020.0,
-        1230.0,
-        1350.0,
-        1550.0,
-    )
+    center_wavelengths_nm: tuple[float, ...] = (525.0, 745.0, 869.0, 1020.0, 1560.0)
     bandpass_fwhm_nm: float = 10.0
     peak_throughput: float = 0.5
     throughput_step_nm: float = 0.5
