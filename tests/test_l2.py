@@ -6,8 +6,9 @@ from __future__ import annotations
 import numpy as np
 import sasktran2 as sk
 
-from aliprocessing.l2.ancillary import Ancillary, ChannelSolarIrradiance
+from aliprocessing.l2.ancillary import Ancillary
 from aliprocessing.l2.optical import aerosol_median_radius_db
+from aliprocessing.solar import ChannelSolarIrradiance
 
 
 def test_ancillary_adds_rayleigh_and_solar_irradiance(small_cal_db):

@@ -13,6 +13,11 @@ import xarray as xr
 PLANCK = 6.62607015e-34
 SPEED_OF_LIGHT = 299792458.0
 
+# Throughput below this fraction of a channel's peak is treated as zero when
+# checking that a spectrum covers the passbands
+_NEGLIGIBLE_THROUGHPUT = 1e-6
+_WAVELENGTH_TOLERANCE_NM = 1e-6
+
 # A dark estimate for one L1A frame: (frame, cal_db) -> counts per pixel
 DarkModel = Callable[[xr.Dataset, xr.Dataset], np.ndarray]
 
@@ -40,6 +45,28 @@ def photon_weighted_throughput(cal_db: xr.Dataset) -> np.ndarray:
     )
     photons_per_joule = wavelength_nm * 1e-9 / (PLANCK * SPEED_OF_LIGHT)
     return np.trapezoid(throughput * photons_per_joule, wavelength_nm, axis=-1)
+
+
+def channel_at_wavelength(
+    cal_db: xr.Dataset, wavelengths_nm: np.ndarray, tolerance_nm: float = 0.01
+) -> np.ndarray:
+    """The spectral channel whose centre wavelength each wavelength is.
+
+    Raises ValueError for a wavelength more than ``tolerance_nm`` from every
+    channel centre.
+    """
+    centers = cal_db["center_wavelength"].to_numpy()
+    wavelengths_nm = np.atleast_1d(np.asarray(wavelengths_nm, dtype=float))
+    distance = np.abs(wavelengths_nm[:, np.newaxis] - centers)
+    channel = np.argmin(distance, axis=1)
+    unmatched = distance[np.arange(len(wavelengths_nm)), channel] > tolerance_nm
+    if np.any(unmatched):
+        msg = (
+            f"wavelengths {wavelengths_nm[unmatched]} are not channel centres "
+            f"{centers}"
+        )
+        raise ValueError(msg)
+    return channel
 
 
 def band_average(
@@ -75,8 +102,16 @@ def band_average(
         .to_numpy()
     )
 
-    passband = throughput_wavelength[np.any(throughput > 0, axis=0)]
-    if wavelength_nm[0] > passband.min() or wavelength_nm[-1] < passband.max():
+    # Coverage is needed where the throughput matters, not out in the tails of
+    # passbands that never reach exactly zero
+    significant = throughput > _NEGLIGIBLE_THROUGHPUT * throughput.max(
+        axis=1, keepdims=True
+    )
+    passband = throughput_wavelength[np.any(significant, axis=0)]
+    if (
+        wavelength_nm[0] > passband.min() + _WAVELENGTH_TOLERANCE_NM
+        or wavelength_nm[-1] < passband.max() - _WAVELENGTH_TOLERANCE_NM
+    ):
         msg = (
             f"the spectrum covers {wavelength_nm[0]} to {wavelength_nm[-1]} nm, but "
             f"the passbands span {passband.min()} to {passband.max()} nm"

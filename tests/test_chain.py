@@ -20,6 +20,7 @@ from aliprocessing.cal_db import SimpleInstrument, simulated_cal_db
 from aliprocessing.forward_model import (
     exposure_for_fill,
     observation_sequence,
+    scene_from_radiance,
     simulate_l1a,
 )
 from aliprocessing.geometry import (
@@ -32,6 +33,7 @@ from aliprocessing.l1b.data import L1bImage
 from aliprocessing.l2.optical import aerosol_median_radius_db
 from aliprocessing.processing.l1a_to_l1b import process_l1a_to_l1b
 from aliprocessing.processing.l1b_to_l2 import process_l1b_to_l2_image
+from aliprocessing.solar import ChannelSolarIrradiance
 
 START = "2026-06-21T16:00"
 ATMOSPHERE_ALTITUDES = np.arange(0.0, 65001.0, 1000.0)
@@ -60,8 +62,8 @@ CHAIN_INSTRUMENT = SimpleInstrument(
 def _band_averaged_solar_irradiance(cal_db):
     """The TSIS-1 HSRS solar irradiance averaged through each channel's SRF.
 
-    Written out here rather than calling the library, so the test checks that
-    L2 uses the calibration database's spectral response the same way.
+    Written out here from the native spectrum rather than calling the library,
+    as an independent check of ChannelSolarIrradiance.
     """
     path = sk.database.StandardDatabase().path(
         "solar/solar_irradiance_hsrs_2022_11_30_extended.nc"
@@ -133,19 +135,12 @@ def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
         median_radius=np.full(len(ATMOSPHERE_ALTITUDES), TRUE_MEDIAN_RADIUS),
     )
     atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
-    # No solar constituent: sasktran2 uses unit irradiance, and the radiance
-    # scales with it, so each channel is scaled by its band-averaged irradiance
-    radiance = (
-        sk.Engine(config, geometry, viewing)
-        .calculate_radiance(atmosphere)["radiance"]
-        .transpose("wavelength", "los", "stokes")
-        .to_numpy()
-    ) * _band_averaged_solar_irradiance(cal_db)[:, np.newaxis, np.newaxis]
-
-    dims = ["spectral_channel", "altitude"]
-    scene = xr.Dataset(
-        {name: (dims, radiance[..., i]) for i, name in enumerate("IQU")},
-        coords={"altitude": FER_TANGENT_ALTITUDES},
+    # The solar constituent L2 uses, as a simulator would at the channel centres
+    atmosphere["solar_irradiance"] = ChannelSolarIrradiance(cal_db)
+    scene = scene_from_radiance(
+        cal_db,
+        sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere),
+        FER_TANGENT_ALTITUDES,
     )
     pressure_temperature = xr.Dataset(
         {
@@ -216,3 +211,12 @@ def test_chain_returns_the_atmosphere():
         state["stratospheric_aerosol_median_radius"].interp({altitude_dim: 20e3})
     )
     assert median_radius == pytest.approx(TRUE_MEDIAN_RADIUS, rel=0.2)
+
+
+def test_channel_solar_irradiance_matches_the_native_spectrum():
+    cal_db = simulated_cal_db(CHAIN_INSTRUMENT)
+    np.testing.assert_allclose(
+        ChannelSolarIrradiance(cal_db).irradiance,
+        _band_averaged_solar_irradiance(cal_db),
+        rtol=1e-4,
+    )

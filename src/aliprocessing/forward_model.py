@@ -12,6 +12,7 @@ import xarray as xr
 
 from aliprocessing.geometry import InstrumentFrame, LocalSphere
 from aliprocessing.instrument import (
+    channel_at_wavelength,
     electron_rate_per_radiance,
     instrument_sensitivities,
     pixel_array,
@@ -327,4 +328,71 @@ def exponential_scene(
             "U": (dims, u * intensity, {"units": RADIANCE_UNITS}),
         },
         coords={"altitude": ("altitude", altitude, {"units": "m"})},
+    )
+
+
+def scene_from_radiance(
+    cal_db: xr.Dataset,
+    radiance: xr.Dataset | xr.DataArray,
+    tangent_altitude: np.ndarray,
+    *,
+    tolerance_nm: float = 0.01,
+) -> xr.Dataset:
+    """A scene for ``simulate_l1a`` from sasktran2 radiance at the channel centres.
+
+    Parameters
+    ----------
+    cal_db
+        Calibration database.
+    radiance
+        The output of ``sasktran2.Engine.calculate_radiance``, or its
+        ``"radiance"``, with dims (wavelength, los, stokes) and wavelength and
+        stokes coordinates. There must be one wavelength at each channel centre,
+        in any order. Stokes components are matched by name; with only I, Q and
+        U are zero. It should be in StokesBasis.Observer and in W m-2 sr-1 nm-1,
+        as given by using ``aliprocessing.solar.ChannelSolarIrradiance`` as the
+        solar constituent; sasktran2 does not record either, so neither can be
+        checked here.
+    tangent_altitude
+        Tangent altitude of each line of sight, in metres.
+    """
+    if isinstance(radiance, xr.Dataset):
+        radiance = radiance["radiance"]
+    radiance = radiance.transpose("wavelength", "los", "stokes")
+    tangent_altitude = np.asarray(tangent_altitude, dtype=float)
+    if tangent_altitude.shape != (radiance.sizes["los"],):
+        msg = (
+            f"{tangent_altitude.size} tangent altitudes for "
+            f"{radiance.sizes['los']} lines of sight"
+        )
+        raise ValueError(msg)
+
+    channel = channel_at_wavelength(
+        cal_db, radiance["wavelength"].to_numpy(), tolerance_nm
+    )
+    num_channels = cal_db.sizes["spectral_channel"]
+    if sorted(channel.tolist()) != list(range(num_channels)):
+        msg = (
+            f"the radiance has wavelengths for channels {sorted(channel.tolist())}; "
+            f"it needs exactly one at each of the {num_channels} channel centres"
+        )
+        raise ValueError(msg)
+    radiance = radiance.isel(wavelength=np.argsort(channel))
+
+    order = np.argsort(tangent_altitude)
+    dims = ["spectral_channel", "altitude"]
+    components = radiance["stokes"].to_numpy().tolist()
+    stokes = {}
+    for name in ("I", "Q", "U"):
+        if name in components:
+            values = radiance.sel(stokes=name).to_numpy()[:, order]
+        elif name == "I":
+            msg = "the radiance has no I component"
+            raise ValueError(msg)
+        else:
+            values = np.zeros((num_channels, len(order)))
+        stokes[name] = (dims, values, {"units": RADIANCE_UNITS})
+    return xr.Dataset(
+        stokes,
+        coords={"altitude": ("altitude", tangent_altitude[order], {"units": "m"})},
     )
