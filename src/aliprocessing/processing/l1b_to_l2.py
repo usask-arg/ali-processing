@@ -88,6 +88,7 @@ def process_l1b_to_l2_image(
     }
     minimizer_kwargs.update(kwargs.get("minimizer_kwargs", {}))
 
+    extinction_log_space = kwargs.get("extinction_log_space", False)
     state_kwargs = {
         "absorbers": {
             "o3": {
@@ -111,7 +112,7 @@ def process_l1b_to_l2_image(
                         "tikh_factor": kwargs.get("extinction_tikh_factor", 1e-2),
                         "min_value": 0,
                         "max_value": 1e-3,
-                        "log_space": kwargs.get("extinction_log_space", False),
+                        "log_space": extinction_log_space,
                     },
                     "median_radius": {
                         "prior_influence": kwargs.get(
