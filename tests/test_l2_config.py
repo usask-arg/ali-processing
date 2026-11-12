@@ -33,7 +33,8 @@ def test_defaults_are_the_previous_settings():
         "ftol": 1e-6,
         "verbose": 2,
     }
-    assert config["measurement"]["altitude_range_m"] == [10000, 40000]
+    # Lowered from 10 km with the two-stage retrieval, as OSIRIS
+    assert config["measurement"]["altitude_range_m"] == [5000, 40000]
     assert config["forward_model"]["model_res_nm"] == 2
     extinction = _get(config, EXTINCTION)
     assert extinction["tikh_factor"] == 1e-2

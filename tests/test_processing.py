@@ -55,6 +55,7 @@ def test_process_l1b_to_l2_image_smoke(
         small_cal_db,
         config={
             "minimizer": {"max_nfev": 2},
+            "two_stage": {"stage1_max_nfev": 2},
             "state": {
                 "aerosols": {
                     "stratospheric_aerosol": {
@@ -83,3 +84,33 @@ def test_process_l1b_to_l2_image_smoke(
 
     for var in ["o3_vmr", "lambertian_albedo"]:
         assert np.all(np.isfinite(state[var]))
+
+    # Two-stage outputs; the DoLP cloud signature needs a dolp image
+    assert 1 <= int(state["num_iterations_first_pass"]) <= 2
+    assert float(state["retrieval_lower_altitude"]) >= 5000.0
+    assert "stratospheric_aerosol_extinction_per_m_first_pass" in state
+    assert np.isfinite(state["cloud_dolp_gradient"]).any() == (pol_state == "dolp")
+
+
+def test_single_stage_retrieval(make_spectra, por_image, small_cal_db):
+    nlos = len(TANGENT_ALTITUDES)
+    intensity = (
+        np.exp(-TANGENT_ALTITUDES / 7000.0)[None, :] * np.array([1.0, 0.5])[:, None]
+    )
+    image = L1bImage(
+        {
+            "I": make_spectra(radiance=intensity, tangent_altitude=TANGENT_ALTITUDES),
+            "dolp": make_spectra(
+                radiance=np.full((2, nlos), 0.3), tangent_altitude=TANGENT_ALTITUDES
+            ),
+        }
+    )
+    state = process_l1b_to_l2_image(
+        image,
+        por_image,
+        small_cal_db,
+        config={"minimizer": {"max_nfev": 2}, "two_stage": {"enabled": False}},
+    )
+    assert 1 <= int(state["num_iterations"]) <= 2
+    assert "cloud_top_altitude" not in state
+    assert "num_iterations_first_pass" not in state

@@ -89,8 +89,76 @@ def _band_averaged_solar_irradiance(cal_db):
     return np.array(averages)
 
 
-def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
-    """Band-centre Stokes radiance against tangent altitude, as a scene."""
+def _water_cloud(cal_db, extinction_per_m):
+    """A liquid water cloud, 5 um droplets, between 9 and 12 km."""
+    droplets = sk.database.MieDatabase(
+        sk.mie.distribution.LogNormalDistribution().freeze(mode_width=1.5),
+        sk.mie.refractive.Water(),
+        cal_db["center_wavelength"].to_numpy(),
+        median_radius=np.array([5000.0]),
+    )
+    in_layer = (ATMOSPHERE_ALTITUDES >= 9e3) & (ATMOSPHERE_ALTITUDES <= 12e3)
+    return sk.constituent.ExtinctionScatterer(
+        droplets,
+        ATMOSPHERE_ALTITUDES,
+        np.where(in_layer, extinction_per_m, 0.0),
+        745.0,
+        "zero",
+        median_radius=np.full(len(ATMOSPHERE_ALTITUDES), 5000.0),
+    )
+
+
+def _boresight_sun(boresight):
+    """One geometry for every line of sight: the boresight's tangent point."""
+    zenith = float(boresight.solar_zenith_angle[0])
+    return {
+        "solar_zenith_angle": zenith,
+        "relative_solar_azimuth_angle": float(
+            boresight.relative_solar_azimuth_angle[0]
+        ),
+        "reference_cos_sza": np.cos(np.deg2rad(zenith)),
+        "earth_radius_m": 6372000.0,
+    }
+
+
+def _l2_sun(image):
+    """The geometry L2 uses for an image, on the FER's tangent altitudes.
+
+    Each line of sight has its own solar angles, and the multiple-scattering
+    source and Earth radius come from the image's reference point, as in
+    skretrieval's model geometry. An across-track bin off the boresight sees
+    a slightly different sun from the boresight; below 10 km, where the limb is
+    bright and the noise small, a FER at the boresight's sun misfits by many
+    standard deviations.
+    """
+    ds = image.spectra["I"].ds
+    altitude = ds["tangent_altitude"].to_numpy()
+    reference = sk.WGS84()
+    reference.from_lat_lon_alt(
+        float(image.reference_latitude()["I"]),
+        float(image.reference_longitude()["I"]),
+        0.0,
+    )
+    return {
+        "solar_zenith_angle": np.interp(
+            FER_TANGENT_ALTITUDES, altitude, ds["solar_zenith_angle"].to_numpy()
+        ),
+        "relative_solar_azimuth_angle": np.interp(
+            FER_TANGENT_ALTITUDES,
+            altitude,
+            ds["relative_solar_azimuth_angle"].to_numpy(),
+        ),
+        "reference_cos_sza": float(image.reference_cos_sza()["I"]),
+        "earth_radius_m": float(np.linalg.norm(reference.location)),
+    }
+
+
+def _front_end_radiance(cal_db, sun, cloud_extinction=0.0):
+    """Band-centre Stokes radiance against tangent altitude, as a scene.
+
+    ``sun`` is the viewing and solar geometry, from ``_boresight_sun`` or
+    ``_l2_sun``.
+    """
     config = sk.Config()
     config.num_stokes = 3
     config.stokes_basis = sk.StokesBasis.Observer
@@ -100,23 +168,30 @@ def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
     config.num_successive_orders_iterations = 1
     config.num_sza = 1
 
-    cos_sza = np.cos(np.deg2rad(solar_zenith_angle))
     geometry = sk.Geometry1D(
-        cos_sza=cos_sza,
+        cos_sza=sun["reference_cos_sza"],
         solar_azimuth=0.0,
-        earth_radius_m=6372000.0,
+        earth_radius_m=sun["earth_radius_m"],
         altitude_grid_m=ATMOSPHERE_ALTITUDES,
         interpolation_method=sk.InterpolationMethod.LinearInterpolation,
         geometry_type=sk.GeometryType.Spherical,
     )
     viewing = sk.ViewingGeometry()
-    for altitude in FER_TANGENT_ALTITUDES:
+    solar_zenith = np.broadcast_to(
+        sun["solar_zenith_angle"], FER_TANGENT_ALTITUDES.shape
+    )
+    relative_azimuth = np.broadcast_to(
+        sun["relative_solar_azimuth_angle"], FER_TANGENT_ALTITUDES.shape
+    )
+    for altitude, zenith, azimuth in zip(
+        FER_TANGENT_ALTITUDES, solar_zenith, relative_azimuth, strict=True
+    ):
         viewing.add_ray(
             sk.TangentAltitudeSolar(
                 altitude,
-                np.deg2rad(relative_azimuth),
+                np.deg2rad(azimuth),
                 SPACECRAFT["spacecraft_altitude"],
-                cos_sza,
+                np.cos(np.deg2rad(zenith)),
             )
         )
 
@@ -134,6 +209,8 @@ def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
         "extend",
         median_radius=np.full(len(ATMOSPHERE_ALTITUDES), TRUE_MEDIAN_RADIUS),
     )
+    if cloud_extinction > 0:
+        atmosphere["cloud"] = _water_cloud(cal_db, cloud_extinction)
     atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
     # The solar constituent L2 uses, as a simulator would at the channel centres
     atmosphere["solar_irradiance"] = ChannelSolarIrradiance(cal_db)
@@ -152,18 +229,21 @@ def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
     return scene, pressure_temperature
 
 
-@pytest.mark.slow
-def test_chain_returns_the_atmosphere():
-    cal_db = simulated_cal_db(CHAIN_INSTRUMENT)
+def _run_chain(instrument, cloud_extinction=0.0, tropopause=None, low_alt=4e3):
+    """FER -> L1A -> L1B -> L2 for the across-track bin next to the boresight."""
+    cal_db = simulated_cal_db(instrument)
     elevation = boresight_elevation_for_tangent_altitude(
         SPACECRAFT["spacecraft_latitude"],
         SPACECRAFT["spacecraft_longitude"],
         SPACECRAFT["spacecraft_altitude"],
         SPACECRAFT["boresight_azimuth"],
-        CHAIN_INSTRUMENT.boresight_tangent_altitude,
+        instrument.boresight_tangent_altitude,
     )
 
-    # FER at the boresight geometry; the across-track variation is ignored
+    # The FER is one profile against tangent altitude, so it can match the
+    # geometry of only one across-track bin. A first FER at the boresight's sun
+    # gives an L1B carrying that bin's geometry; the FER used is then computed
+    # with exactly the geometry L2 uses for it.
     frame = InstrumentFrame.from_attitude(
         SPACECRAFT["spacecraft_latitude"],
         SPACECRAFT["spacecraft_longitude"],
@@ -175,42 +255,89 @@ def test_chain_returns_the_atmosphere():
     boresight = tangent_geometry(
         frame.observer, frame.boresight[np.newaxis], sun_direction(np.datetime64(START))
     )
-    scene, pressure_temperature = _front_end_radiance(
-        cal_db,
-        float(boresight.solar_zenith_angle[0]),
-        float(boresight.relative_solar_azimuth_angle[0]),
-    )
 
-    frames = observation_sequence(
-        cal_db,
-        start=START,
-        num_sets=1,
-        exposure_time=exposure_for_fill(cal_db, scene),
-        boresight_elevation=elevation,
-        **SPACECRAFT,
-    )
-    l1b = process_l1a_to_l1b(simulate_l1a(cal_db, scene, frames, noise=False), cal_db)
+    def l1b_image(sun):
+        scene, pressure_temperature = _front_end_radiance(cal_db, sun, cloud_extinction)
+        frames = observation_sequence(
+            cal_db,
+            start=START,
+            num_sets=1,
+            exposure_time=exposure_for_fill(cal_db, scene),
+            boresight_elevation=elevation,
+            **SPACECRAFT,
+        )
+        l1b = process_l1a_to_l1b(
+            simulate_l1a(cal_db, scene, frames, noise=False), cal_db
+        )
+        image = L1bImage.from_l1b(l1b, 0, 1, low_alt=low_alt, high_alt=46e3)
+        return image, pressure_temperature
 
-    # The bin next to the boresight
-    image = L1bImage.from_l1b(l1b, 0, 1, low_alt=8e3, high_alt=46e3)
-    state = process_l1b_to_l2_image(
+    image, _ = l1b_image(_boresight_sun(boresight))
+    image, pressure_temperature = l1b_image(_l2_sun(image))
+    if tropopause is not None:
+        pressure_temperature["tropopause_altitude"] = ((), tropopause)
+    return process_l1b_to_l2_image(
         image, pressure_temperature, cal_db, config={"minimizer": {"verbose": 0}}
     )
 
-    altitude_dim = state["stratospheric_aerosol_extinction_per_m"].dims[0]
-    altitudes = {altitude_dim: [15e3, 20e3, 25e3, 30e3]}
-    extinction = state["stratospheric_aerosol_extinction_per_m"].interp(altitudes)
-    error = state["stratospheric_aerosol_extinction_per_m_1sigma_error"].interp(
-        altitudes
-    )
-    truth = np.interp(altitudes[altitude_dim], ATMOSPHERE_ALTITUDES, TRUE_EXTINCTION)
 
+def _extinction_against_truth(state, altitudes):
+    altitude_dim = state["stratospheric_aerosol_extinction_per_m"].dims[0]
+    at = {altitude_dim: altitudes}
+    extinction = state["stratospheric_aerosol_extinction_per_m"].interp(at)
+    error = state["stratospheric_aerosol_extinction_per_m_1sigma_error"].interp(at)
+    truth = np.interp(altitudes, ATMOSPHERE_ALTITUDES, TRUE_EXTINCTION)
+    return extinction, error, truth
+
+
+@pytest.mark.slow
+def test_chain_returns_the_atmosphere():
+    state = _run_chain(CHAIN_INSTRUMENT)
+
+    # Clear sky: no cloud, so stage 2 starts at the bottom of stage 1's window
+    assert np.isnan(float(state["cloud_top_altitude"]))
+    assert float(state["retrieval_lower_altitude"]) == 5000.0
+
+    extinction, error, truth = _extinction_against_truth(
+        state, [15e3, 20e3, 25e3, 30e3]
+    )
     np.testing.assert_allclose(extinction, truth, rtol=0.1)
     assert np.all(np.abs(extinction - truth) < 3 * error)
+    altitude_dim = state["stratospheric_aerosol_extinction_per_m"].dims[0]
     median_radius = float(
         state["stratospheric_aerosol_median_radius"].interp({altitude_dim: 20e3})
     )
     assert median_radius == pytest.approx(TRUE_MEDIAN_RADIUS, rel=0.2)
+
+
+# The cloud signatures are strongest between the shortest and longest channels
+CLOUD_INSTRUMENT = SimpleInstrument(
+    **{
+        **SMALL_INSTRUMENT_KWARGS,
+        "rows_per_subimage": 160,
+        "gap_rows": 8,
+        "altitude_grid": (0.0, 50e3, 500.0),
+        "center_wavelengths_nm": (525.0, 1560.0),
+    }
+)
+
+
+@pytest.mark.slow
+def test_chain_retrieves_above_a_cloud():
+    # An optically thick water cloud with its top at 12 km, just above an 11 km
+    # tropopause
+    state = _run_chain(CLOUD_INSTRUMENT, cloud_extinction=5e-5, tropopause=11e3)
+
+    cloud_top = float(state["cloud_top_altitude"])
+    assert 12e3 <= cloud_top <= 14e3
+    assert state["cloud_colour_mask"].any()
+    assert state["cloud_dolp_mask"].any()
+    assert float(state["retrieval_lower_altitude"]) == cloud_top + 1000.0
+
+    # Above the cloud the aerosol is still recovered, within the few percent
+    # that light reflected by the cloud, which L2 does not model, can cost
+    extinction, _, truth = _extinction_against_truth(state, [15e3, 20e3, 25e3, 30e3])
+    np.testing.assert_allclose(extinction, truth, rtol=0.15)
 
 
 def test_channel_solar_irradiance_matches_the_native_spectrum():
