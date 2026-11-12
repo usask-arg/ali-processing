@@ -57,6 +57,36 @@ CHAIN_INSTRUMENT = SimpleInstrument(
 )
 
 
+def _band_averaged_solar_irradiance(cal_db):
+    """The TSIS-1 HSRS solar irradiance averaged through each channel's SRF.
+
+    Written out here rather than calling the library, so the test checks that
+    L2 uses the calibration database's spectral response the same way.
+    """
+    path = sk.database.StandardDatabase().path(
+        "solar/solar_irradiance_hsrs_2022_11_30_extended.nc"
+    )
+    with xr.open_dataset(path) as solar:
+        wavelength = solar["wavelength"].to_numpy()
+        irradiance = solar["irradiance"].to_numpy()
+    throughput_wavelength = cal_db["throughput_wavelength"].to_numpy()
+    band = (wavelength >= throughput_wavelength[0]) & (
+        wavelength <= throughput_wavelength[-1]
+    )
+    wavelength, irradiance = wavelength[band], irradiance[band]
+
+    averages = []
+    for throughput in cal_db["spectral_throughput"].to_numpy():
+        photon_weight = (
+            np.interp(wavelength, throughput_wavelength, throughput) * wavelength
+        )
+        averages.append(
+            np.trapezoid(photon_weight * irradiance, wavelength)
+            / np.trapezoid(photon_weight, wavelength)
+        )
+    return np.array(averages)
+
+
 def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
     """Band-centre Stokes radiance against tangent altitude, as a scene."""
     config = sk.Config()
@@ -103,15 +133,14 @@ def _front_end_radiance(cal_db, solar_zenith_angle, relative_azimuth):
         median_radius=np.full(len(ATMOSPHERE_ALTITUDES), TRUE_MEDIAN_RADIUS),
     )
     atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
-    atmosphere["solar_irradiance"] = sk.constituent.SolarIrradiance(
-        mode="average", resolution=1
-    )
+    # No solar constituent: sasktran2 uses unit irradiance, and the radiance
+    # scales with it, so each channel is scaled by its band-averaged irradiance
     radiance = (
         sk.Engine(config, geometry, viewing)
         .calculate_radiance(atmosphere)["radiance"]
         .transpose("wavelength", "los", "stokes")
         .to_numpy()
-    )
+    ) * _band_averaged_solar_irradiance(cal_db)[:, np.newaxis, np.newaxis]
 
     dims = ["spectral_channel", "altitude"]
     scene = xr.Dataset(
@@ -170,7 +199,7 @@ def test_chain_returns_the_atmosphere():
     # The bin next to the boresight
     image = L1bImage.from_l1b(l1b, 0, 1, low_alt=8e3, high_alt=46e3)
     state = process_l1b_to_l2_image(
-        image, pressure_temperature, None, minimizer_kwargs={"verbose": 0}
+        image, pressure_temperature, cal_db, minimizer_kwargs={"verbose": 0}
     )
 
     altitude_dim = state["stratospheric_aerosol_extinction_per_m"].dims[0]

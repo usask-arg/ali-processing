@@ -42,6 +42,65 @@ def photon_weighted_throughput(cal_db: xr.Dataset) -> np.ndarray:
     return np.trapezoid(throughput * photons_per_joule, wavelength_nm, axis=-1)
 
 
+def band_average(
+    cal_db: xr.Dataset, wavelength_nm: np.ndarray, spectrum: np.ndarray
+) -> np.ndarray:
+    """Photon-weighted band average of a spectrum for each spectral channel.
+
+    X_w = ∫ τ_w(λ) λ X(λ) dλ / ∫ τ_w(λ) λ dλ, the definition the calibration
+    database uses for band-averaged radiance. The integrals are evaluated on the
+    spectrum's own wavelength grid, which must resolve the passbands and cover
+    every wavelength where spectral_throughput is greater than 0.
+
+    Parameters
+    ----------
+    cal_db
+        Calibration database.
+    wavelength_nm
+        Increasing wavelengths of the spectrum, in nm.
+    spectrum
+        Values with wavelength as the last dimension.
+
+    Returns
+    -------
+    np.ndarray
+        Shape (spectral_channel, *spectrum.shape[:-1]).
+    """
+    wavelength_nm = np.asarray(wavelength_nm, dtype=float)
+    spectrum = np.asarray(spectrum, dtype=float)
+    throughput_wavelength = cal_db["throughput_wavelength"].to_numpy()
+    throughput = (
+        cal_db["spectral_throughput"]
+        .transpose("spectral_channel", "throughput_wavelength")
+        .to_numpy()
+    )
+
+    passband = throughput_wavelength[np.any(throughput > 0, axis=0)]
+    if wavelength_nm[0] > passband.min() or wavelength_nm[-1] < passband.max():
+        msg = (
+            f"the spectrum covers {wavelength_nm[0]} to {wavelength_nm[-1]} nm, but "
+            f"the passbands span {passband.min()} to {passband.max()} nm"
+        )
+        raise ValueError(msg)
+
+    inside = (wavelength_nm >= throughput_wavelength[0]) & (
+        wavelength_nm <= throughput_wavelength[-1]
+    )
+    wavelength_nm = wavelength_nm[inside]
+    spectrum = spectrum[..., inside]
+    averages = []
+    for channel_throughput in throughput:
+        weight = (
+            np.interp(wavelength_nm, throughput_wavelength, channel_throughput)
+            * wavelength_nm
+        )
+        averages.append(
+            np.trapezoid(weight * spectrum, wavelength_nm, axis=-1)
+            / np.trapezoid(weight, wavelength_nm)
+        )
+    return np.stack(averages)
+
+
 def electron_rate_per_radiance(cal_db: xr.Dataset, channel: int) -> np.ndarray:
     """E_p · T_k(w) · Λ_w: electrons per second per unit band-averaged radiance.
 

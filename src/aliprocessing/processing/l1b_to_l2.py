@@ -21,13 +21,21 @@ def stratospheric_aerosol_optical_property(*args, **kwargs):
 
 
 def process_l1b_to_l2_image(
-    l1b_image: L1bImage, por_image: xr.Dataset, cal_db: Path, **kwargs  # noqa: ARG001
+    l1b_image: L1bImage, por_image: xr.Dataset, cal_db: xr.Dataset | Path, **kwargs
 ):
+    """Retrieve one L1B image.
+
+    ``cal_db`` is the calibration database, or a path to it; its spectral
+    response functions set the band-averaged solar irradiance of each channel.
+    """
+    if not isinstance(cal_db, xr.Dataset):
+        cal_db = xr.open_dataset(cal_db)
     good = ~np.isnan(por_image.pressure.to_numpy())
     anc = Ancillary(
         por_image.altitude.to_numpy()[good],
         por_image.pressure.to_numpy()[good],
         por_image.temperature.to_numpy()[good],
+        cal_db=cal_db,
         **kwargs.get("ancillary_cfg", {}),
     )
 
