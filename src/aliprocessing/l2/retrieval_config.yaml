@@ -17,7 +17,10 @@ forward_model:
 
 # One Triplet measurement per channel, built from the L1B radiance and dolp
 measurement:
-  altitude_range_m: [10000, 40000]       # tangent altitudes used in the fit
+  # Tangent altitudes used in the fit. With two_stage enabled this is stage 1's
+  # window, and its lower edge is the lowest that stage 2 can start from, as
+  # OSIRIS's 5 km first-pass floor.
+  altitude_range_m: [5000, 40000]
   normalization_range_m: [40000, 45000]  # only used when normalize is true
   normalize: false
   log_space: false
@@ -45,6 +48,28 @@ minimizer:
   max_nfev: 200
   ftol: 1.0e-6
   verbose: 2
+
+# Two-stage retrieval. Stage 1 retrieves over measurement.altitude_range_m;
+# clouds are found from its result and the L1B; stage 2 fits only from above
+# the cloud top, starting from stage 1's aerosol (the prior is unchanged). See
+# aliprocessing.l2.cloud. The thresholds are provisional, from noise-free
+# simulations with a water cloud.
+two_stage:
+  enabled: true
+  stage1_max_nfev: 30
+  cloud_padding_m: 1000          # stage 2 starts this far above the cloud top
+  cloud:
+    max_altitude_m: 22000        # no cloud is detected above this
+    # Scores above the POR tropopause_altitude are scaled down by
+    # exp(-0.5 ((z - z_trop) / scale)^2); null applies no penalty
+    tropopause_penalty_scale_m: 2000
+    # Colour signature: -(dlnI_long/dz - dlnI_short/dz) [km-1] times the stage-1
+    # extinction [km-1]; null uses the shortest and longest channels
+    colour_wavelengths_nm: null
+    colour_threshold: 7.0e-4
+    # DoLP signature: d ln(DoLP)/dz [km-1] at one channel; null uses the longest
+    dolp_wavelength_nm: null
+    dolp_gradient_threshold: 0.3
 
 # Passed to the ancillary (pressure and temperature) as keyword arguments
 ancillary: {}
