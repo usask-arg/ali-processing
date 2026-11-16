@@ -275,14 +275,18 @@ class L1bImage(Observation):
     @abc.abstractmethod
     def reference_longitude(self) -> dict[float]:
         """
-        The reference longitude for the observation
+        The reference longitude for the observation, in [-180, 180)
+
+        The tangent longitudes are averaged as angles, so that an image across
+        the dateline is referenced near ±180 rather than 0.
 
         Returns
         -------
         dict[float]
         """
         return {
-            key: ds.ds["tangent_longitude"].mean() for key, ds in self._spectra.items()
+            key: _circular_mean_deg(ds.ds["tangent_longitude"])
+            for key, ds in self._spectra.items()
         }
 
     def append_information_to_l1(self, l1: dict[RadianceGridded], **kwargs) -> None:

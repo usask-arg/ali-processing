@@ -244,6 +244,23 @@ def test_l1b_image_handles_wrapping_angles(noiseless_l1b):
     assert np.all((los_azimuth >= 0) & (los_azimuth < 360))
 
 
+def test_reference_longitude_across_the_dateline(noiseless_l1b):
+    # Tangent points cross the dateline between the reference altitudes, the
+    # last dimension, so the lines of sight sit on both sides of it
+    l1b = noiseless_l1b.copy(deep=True)
+    l1b["tangent_longitude"][:] = [179.7, -179.9, -179.5]
+    image = L1bImage.from_l1b(l1b, 0, 2)
+    los_longitude = image.spectra["I"].ds["tangent_longitude"]
+    assert np.any(los_longitude > 0)
+    assert np.any(los_longitude < 0)
+
+    longitude = image.reference_longitude()
+    # A plain mean of values near +180 and -180 would be near 0
+    for value in longitude.values():
+        assert -180 <= value < 180
+        assert abs(value) == pytest.approx(180.0, abs=0.2)
+
+
 def test_frame_pointed_above_the_grid_gives_nan(small_cal_db, limb_scene, make_frames):
     # Boresight at 200 km: no pixel is near the 0-50 km grid
     elevation = boresight_elevation_for_tangent_altitude(
