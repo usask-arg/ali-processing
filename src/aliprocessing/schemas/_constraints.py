@@ -237,6 +237,41 @@ def _dolp_consistent(ds, _cal_db):
     return ["dolp differs from sqrt(q² + u²)"]
 
 
+# ------------------------------------------------------------------------- L2
+def _kernel_grid(ds, _cal_db):
+    if not _has(ds, "altitude", "altitude2"):
+        return []
+    altitude, altitude2 = ds["altitude"].to_numpy(), ds["altitude2"].to_numpy()
+    if altitude.shape == altitude2.shape and np.array_equal(altitude, altitude2):
+        return []
+    return ["altitude2 does not equal altitude"]
+
+
+def _complete(name: str, variables: tuple[str, ...], attributes=()) -> Check:
+    """All of ``variables`` and ``attributes`` are present, or none of the variables."""
+
+    def check(ds, _cal_db):
+        if not any(_has(ds, variable) for variable in variables):
+            return []
+        missing = [variable for variable in variables if not _has(ds, variable)]
+        missing += [attribute for attribute in attributes if attribute not in ds.attrs]
+        if not missing:
+            return []
+        return [f"{name} variables are present but {', '.join(missing)} missing"]
+
+    return check
+
+
+def _retrieved_quantity(name: str) -> tuple[str, ...]:
+    return (
+        name,
+        f"{name}_prior",
+        f"{name}_noise_error",
+        f"{name}_solution_error",
+        f"{name}_averaging_kernel",
+    )
+
+
 # --------------------------------------------------------------------- CAL_DB
 def _pixel_array(ds: xr.Dataset, name: str) -> np.ndarray:
     """``name`` with the detector dimensions last."""
@@ -420,6 +455,32 @@ CONSTRAINT_CHECKS: dict[str, dict[str, Check]] = {
         "grid-matches-calibration": _grid_matches_calibration,
         "finite-together": _finite_together,
         "dolp-consistent": _dolp_consistent,
+    },
+    "l2": {
+        "time-increasing": _time_increasing,
+        "grid-increasing": _strictly_increasing("altitude", "across_track_angle"),
+        "kernel-grid": _kernel_grid,
+        "median-radius-complete": _complete(
+            "aerosol_median_radius",
+            _retrieved_quantity("aerosol_median_radius"),
+            attributes=("aerosol_median_radius_retrieval_space",),
+        ),
+        "albedo-complete": _complete(
+            "surface_albedo",
+            (
+                "surface_albedo",
+                "surface_albedo_noise_error",
+                "surface_albedo_solution_error",
+                "albedo_wavelength",
+            ),
+        ),
+        "finite-values": _all_finite(
+            "aerosol_extinction",
+            "aerosol_extinction_noise_error",
+            "aerosol_extinction_solution_error",
+            "latitude",
+            "longitude",
+        ),
     },
     "cal_db": {
         "analyzer-pixels": _analyzer_pixels,

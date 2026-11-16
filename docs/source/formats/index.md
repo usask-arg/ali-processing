@@ -9,4 +9,5 @@ These pages are generated from the YAML schemas in `src/aliprocessing/schemas/`.
 generated/l1a
 generated/l1b
 generated/cal_db
+generated/l2
 ```

@@ -3,17 +3,20 @@
 One YAML file per product. Each file is the reviewable definition of that product;
 validation code and the documentation pages are generated from it.
 
-| File          | Product                                                       |
-| ------------- | ------------------------------------------------------------- |
-| `l1a.yaml`    | L1A raw detector frames with spacecraft position and attitude |
-| `l1b.yaml`    | L1B calibrated radiance and polarization on an altitude grid  |
-| `cal_db.yaml` | Calibration database: instrument characterization             |
+| File          | Product                                                           |
+| ------------- | ----------------------------------------------------------------- |
+| `l1a.yaml`    | L1A raw detector frames with spacecraft position and attitude     |
+| `l1b.yaml`    | L1B calibrated radiance and polarization on an altitude grid      |
+| `cal_db.yaml` | Calibration database: instrument characterization                 |
+| `l2.yaml`     | L2 aerosol extinction and median radius profiles with diagnostics |
 
 These are **drafts** (`status: draft`) of the target formats. The simple
 instrument model follows them: `aliprocessing.forward_model` writes L1A,
 `aliprocessing.cal_db` builds a placeholder calibration database, and
 `aliprocessing.processing.l1a_to_l1b` reads both and writes L1B, checking each
-against its schema. The simulator package has not been changed to match yet.
+against its schema. `aliprocessing.processing.l1b_to_l2.process_l1b_to_l2`
+retrieves an L1B granule into L2. The simulator package has not been changed to
+match yet.
 
 ## Instrument summary
 
@@ -65,7 +68,7 @@ Variable keys:
 | `dtype`         | `float`, `int`, `bool`, `datetime`, or `str`.                        |
 | `units`         | CF / UDUNITS-2 unit string; `"1"` is dimensionless.                  |
 | `required`      | `true` or `false`.                                                   |
-| `required_when` | Required when the listed variables have the listed values.           |
+| `required_when` | Required when the listed variables or global attributes have the listed values. |
 | `default`       | Value assumed when an optional field is absent.                      |
 | `valid_min`/`valid_max` | Inclusive bounds on every element.                           |
 | `allowed`       | Enumerated allowed values.                                           |

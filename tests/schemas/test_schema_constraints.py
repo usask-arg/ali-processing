@@ -37,6 +37,7 @@ def test_every_constraint_is_checked_or_explicitly_deferred(product):
         ("l1a", ["image", "time", "spectral_channel"]),
         ("l1b", ["time", "radiance", "dolp", "altitude"]),
         ("cal_db", ["pixel_analyzer", "spectral_throughput", "altitude"]),
+        ("l2", ["time", "altitude", "aerosol_extinction", "latitude"]),
     ],
 )
 def test_constraints_skip_when_their_fields_are_missing(product, fields, request):
@@ -241,3 +242,61 @@ def test_across_track_bins_are_half_open():
     np.testing.assert_array_equal(
         across_track_bin(azimuth, edges), [0, 0, 1, 1, -1, -1, -1]
     )
+
+
+# ------------------------------------------------------------------------- L2
+def test_l2_time_not_increasing(l2):
+    l2 = l2.isel(observation_set=[1, 0])
+    assert _constraint_failures(validate(l2, "l2")) == {"time-increasing"}
+
+
+def test_l2_altitude_not_increasing(l2):
+    l2 = l2.isel(altitude=slice(None, None, -1), altitude2=slice(None, None, -1))
+    assert _constraint_failures(validate(l2, "l2")) == {"grid-increasing"}
+
+
+def test_l2_across_track_angle_not_increasing(l2):
+    l2 = l2.isel(across_track=[1, 0])
+    assert _constraint_failures(validate(l2, "l2")) == {"grid-increasing"}
+
+
+def test_l2_kernel_grid_differs_from_altitude(l2):
+    l2 = l2.assign_coords(altitude2=l2["altitude2"] + 1.0)
+    assert _constraint_failures(validate(l2, "l2")) == {"kernel-grid"}
+
+
+def _without(ds, prefix):
+    ds = ds.drop_vars([name for name in ds.variables if name.startswith(prefix)])
+    ds.attrs = {key: value for key, value in ds.attrs.items() if prefix not in key}
+    return ds
+
+
+def test_l2_median_radius_is_all_or_nothing(l2):
+    assert validate(_without(l2, "aerosol_median_radius"), "l2") == []
+
+    partial = l2.drop_vars("aerosol_median_radius_averaging_kernel")
+    del partial.attrs["aerosol_median_radius_retrieval_space"]
+    issues = validate(partial, "l2")
+    assert _constraint_failures(issues) == {"median-radius-complete"}
+    message = next(i.message for i in issues if "median-radius" in i.location)
+    assert "aerosol_median_radius_averaging_kernel" in message
+    assert "aerosol_median_radius_retrieval_space" in message
+
+
+def test_l2_albedo_is_all_or_nothing(l2):
+    without = _without(l2, "surface_albedo").drop_vars("albedo_wavelength")
+    assert validate(without, "l2") == []
+
+    partial = l2.drop_vars("surface_albedo_solution_error")
+    assert _constraint_failures(validate(partial, "l2")) == {"albedo-complete"}
+
+
+@pytest.mark.parametrize("name", ["aerosol_extinction_solution_error", "longitude"])
+def test_l2_not_finite(l2, name):
+    l2[name][0, 0, ...] = np.nan
+    assert _constraint_failures(validate(l2, "l2")) == {"finite-values"}
+
+
+def test_l2_no_cloud_is_not_an_error(l2):
+    assert np.all(np.isnan(l2["cloud_top_altitude"]))
+    assert validate(l2, "l2") == []

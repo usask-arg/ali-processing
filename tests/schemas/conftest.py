@@ -224,3 +224,82 @@ def cal_db() -> xr.Dataset:
         },
         attrs={"schema_version": "0.1.0", "valid_from": "2026-11-04T00:00:00Z"},
     )
+
+
+L2_ALTITUDES = np.linspace(5e3, 25e3, 5)
+
+
+@pytest.fixture
+def l2() -> xr.Dataset:
+    """A two-stage L2 granule with every optional field."""
+    num_altitudes = len(L2_ALTITUDES)
+    grid_dims = ["observation_set", "across_track"]
+    profile_dims = [*grid_dims, "altitude"]
+    kernel_dims = [*profile_dims, "altitude2"]
+    albedo_dims = [*grid_dims, "albedo_wavelength"]
+    grid_shape = (NUM_SETS, NUM_BINS)
+    profile_shape = (*grid_shape, num_altitudes)
+    kernel = np.broadcast_to(np.eye(num_altitudes), (*profile_shape, num_altitudes))
+
+    def per_profile(value, units=None, dtype=float):
+        return _var(grid_dims, np.full(grid_shape, value, dtype=dtype), units)
+
+    def profile(value, units):
+        return _var(profile_dims, np.full(profile_shape, value), units)
+
+    def retrieved(name, value, units):
+        return {
+            name: profile(value, units),
+            f"{name}_prior": profile(value, units),
+            f"{name}_noise_error": profile(0.1 * value, units),
+            f"{name}_solution_error": profile(0.2 * value, units),
+            f"{name}_averaging_kernel": _var(kernel_dims, kernel, "1"),
+        }
+
+    def albedo(value):
+        return _var(albedo_dims, np.full((*grid_shape, NUM_CHANNELS), value), "1")
+
+    data_vars = {
+        "across_track_angle": _var(["across_track"], np.array([-0.5, 0.5]), "degree"),
+        "latitude": per_profile(52.0, "degrees_north"),
+        "longitude": per_profile(-100.0, "degrees_east"),
+        "solar_zenith_angle": per_profile(60.0, "degree"),
+        "scattering_angle": per_profile(90.0, "degree"),
+        **retrieved("aerosol_extinction", 1e-6, "m-1"),
+        "aerosol_extinction_stage1": profile(1e-6, "m-1"),
+        **retrieved("aerosol_median_radius", 80.0, "nm"),
+        "surface_albedo": albedo(0.3),
+        "surface_albedo_noise_error": albedo(0.01),
+        "surface_albedo_solution_error": albedo(0.02),
+        "tropopause_altitude": per_profile(11e3, "m"),
+        "lower_altitude_limit": per_profile(5e3, "m"),
+        "upper_altitude_limit": per_profile(40e3, "m"),
+        "cloud_top_altitude": per_profile(np.nan, "m"),
+        "cost": per_profile(1.1, "1"),
+        "optimizer_status": per_profile(2, "1", dtype=np.int64),
+        "converged": _var(grid_dims, np.ones(grid_shape, dtype=bool)),
+        "num_function_evaluations": per_profile(7, "1", dtype=np.int64),
+        "profile_quality_flag": per_profile(0, "1", dtype=np.int64),
+        "aerosol_extinction_quality_flag": _var(
+            profile_dims, np.zeros(profile_shape, dtype=np.int64), "1"
+        ),
+    }
+    set_times = np.datetime64("2026-11-04T12:00:00", "ns") + np.arange(
+        NUM_SETS
+    ) * np.timedelta64(3, "s")
+    return xr.Dataset(
+        data_vars,
+        coords={
+            "time": xr.Variable(["observation_set"], set_times),
+            "altitude": _var(["altitude"], L2_ALTITUDES, "m"),
+            "altitude2": _var(["altitude2"], L2_ALTITUDES, "m"),
+            "albedo_wavelength": _var(["albedo_wavelength"], CENTER_WAVELENGTHS, "nm"),
+        },
+        attrs={
+            "schema_version": "0.1.0",
+            "retrieval_stages": 2,
+            "aerosol_extinction_wavelength": 745.0,
+            "aerosol_extinction_retrieval_space": "linear",
+            "aerosol_median_radius_retrieval_space": "linear",
+        },
+    )

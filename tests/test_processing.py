@@ -7,8 +7,14 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from aliprocessing.forward_model import simulate_l1a
 from aliprocessing.l1b.data import L1bImage
-from aliprocessing.processing.l1b_to_l2 import process_l1b_to_l2_image
+from aliprocessing.processing.l1a_to_l1b import process_l1a_to_l1b
+from aliprocessing.processing.l1b_to_l2 import (
+    process_l1b_to_l2,
+    process_l1b_to_l2_image,
+)
+from aliprocessing.schemas import validate
 
 TANGENT_ALTITUDES = np.arange(5000.0, 45001.0, 2500.0)
 
@@ -114,3 +120,109 @@ def test_single_stage_retrieval(make_spectra, por_image, small_cal_db):
     assert 1 <= int(state["num_iterations"]) <= 2
     assert "cloud_top_altitude" not in state
     assert "num_iterations_first_pass" not in state
+
+
+# Two function evaluations per stage: these check the wiring, not convergence
+FAST_CONFIG = {
+    "minimizer": {"max_nfev": 2, "verbose": 0},
+    "two_stage": {"stage1_max_nfev": 2},
+}
+
+
+def _image(make_spectra, **spectra_kwargs):
+    nlos = len(TANGENT_ALTITUDES)
+    intensity = (
+        np.exp(-TANGENT_ALTITUDES / 7000.0)[None, :] * np.array([1.0, 0.5])[:, None]
+    )
+    return L1bImage(
+        {
+            "I": make_spectra(
+                radiance=intensity, tangent_altitude=TANGENT_ALTITUDES, **spectra_kwargs
+            ),
+            "dolp": make_spectra(
+                radiance=np.full((2, nlos), 0.3),
+                tangent_altitude=TANGENT_ALTITUDES,
+                **spectra_kwargs,
+            ),
+        }
+    )
+
+
+def test_process_l1b_to_l2_granule(small_cal_db, limb_scene, make_frames, por_image):
+    l1a = simulate_l1a(small_cal_db, limb_scene, make_frames(num_sets=2), noise=False)
+    # Two of the four across-track bins keep the test fast
+    l1b = process_l1a_to_l1b(l1a, small_cal_db).isel(across_track=[1, 2])
+    # A tropopause for each observation set
+    por = por_image.assign(
+        tropopause_altitude=("observation_set", np.array([10e3, 12e3]))
+    )
+
+    l2 = process_l1b_to_l2(l1b, por, small_cal_db, config=FAST_CONFIG)
+
+    assert validate(l2, "l2") == []
+    assert l2.sizes["observation_set"] == 2
+    assert l2.sizes["across_track"] == 2
+    assert l2.attrs["retrieval_stages"] == 2
+    np.testing.assert_array_equal(l2["time"], l1b["time"].min("wavelength"))
+    np.testing.assert_array_equal(l2["across_track_angle"], l1b["across_track_angle"])
+    np.testing.assert_array_equal(
+        l2["tropopause_altitude"].isel(across_track=0), [10e3, 12e3]
+    )
+    np.testing.assert_array_equal(l2["albedo_wavelength"], l1b["wavelength"])
+
+    image = L1bImage.from_l1b(l1b, 1, 0)
+    profile = l2.isel(observation_set=1, across_track=0)
+    np.testing.assert_allclose(profile["latitude"], image.reference_latitude()["I"])
+    np.testing.assert_allclose(profile["longitude"], image.reference_longitude()["I"])
+
+    # The solution covariance is the noise covariance plus a positive
+    # semi-definite smoothing term
+    for name in ("aerosol_extinction", "aerosol_median_radius", "surface_albedo"):
+        noise = l2[f"{name}_noise_error"].to_numpy()
+        assert np.all(l2[f"{name}_solution_error"] >= noise * (1 - 1e-9))
+
+
+def test_solution_errors_with_a_disabled_state_element(
+    make_spectra, por_image, small_cal_db
+):
+    # skretrieval re-enables every element after retrieving; the solution
+    # errors must still be sliced as during the retrieval
+    state = process_l1b_to_l2_image(
+        _image(make_spectra),
+        por_image,
+        small_cal_db,
+        config={
+            **FAST_CONFIG,
+            "two_stage": {"enabled": False},
+            "state": {"surface": {"lambertian_albedo": {"enabled": False}}},
+        },
+    )
+    assert "lambertian_albedo_1sigma_error" not in state
+    assert "lambertian_albedo_1sigma_solution_error" not in state
+    for name in (
+        "stratospheric_aerosol_extinction_per_m",
+        "stratospheric_aerosol_median_radius",
+    ):
+        noise = state[f"{name}_1sigma_error"].to_numpy()
+        solution = state[f"{name}_1sigma_solution_error"].to_numpy()
+        assert solution.shape == noise.shape
+        assert np.all(solution >= noise * (1 - 1e-9))
+
+
+def test_scattering_angle_near_backscatter(make_spectra, por_image, small_cal_db):
+    image = _image(make_spectra)
+    for spectra in image.spectra.values():
+        azimuth = spectra.ds["relative_solar_azimuth_angle"]
+        azimuth[:] = np.where(np.arange(azimuth.size) % 2 == 0, 179.5, -179.5)
+
+    state = process_l1b_to_l2_image(
+        image,
+        por_image,
+        small_cal_db,
+        config={**FAST_CONFIG, "two_stage": {"enabled": False}},
+    )
+
+    # A plain mean of the 9 values at 179.5 and 8 at -179.5 would be about 10
+    assert abs(float(state["solar_azimuth_angle"])) == pytest.approx(180.0, abs=0.1)
+    # Looking away from the sun at a solar zenith angle of 60 degrees
+    assert float(state["solar_scattering_angle"]) == pytest.approx(150.0, abs=0.01)

@@ -76,8 +76,10 @@ def schema_problems(schema: dict) -> list[str]:
                     if dim not in dimensions
                 )
             for condition in field.get("required_when", {}):
-                if condition not in fields and condition not in schema.get(
-                    "variables", {}
+                if (
+                    condition not in fields
+                    and condition not in schema.get("variables", {})
+                    and condition not in schema.get("attributes", {})
                 ):
                     problems.append(
                         f"{location}: required_when on unknown {condition!r}"

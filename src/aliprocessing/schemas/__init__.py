@@ -14,7 +14,7 @@ import yaml
 from aliprocessing.schemas._constraints import CONSTRAINT_CHECKS, DEFERRED_CONSTRAINTS
 from aliprocessing.schemas._markdown import render_markdown
 
-PRODUCTS = ("l1a", "l1b", "cal_db")
+PRODUCTS = ("l1a", "l1b", "cal_db", "l2")
 
 __all__ = [
     "CONSTRAINT_CHECKS",
