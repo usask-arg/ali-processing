@@ -106,10 +106,12 @@ def test_granule_is_valid(config):
         "altitude2": 3,
         "albedo_wavelength": 2,
     }
-    assert l2["aerosol_extinction"].dims == ("observation_set", "across_track", "altitude")
-    np.testing.assert_array_equal(
-        l2["time"], [START, START + np.timedelta64(3, "s")]
+    assert l2["aerosol_extinction"].dims == (
+        "observation_set",
+        "across_track",
+        "altitude",
     )
+    np.testing.assert_array_equal(l2["time"], [START, START + np.timedelta64(3, "s")])
     np.testing.assert_array_equal(l2["across_track_angle"], [-1.0, 1.0])
     assert l2["aerosol_extinction"].attrs["units"] == "m-1"
 
@@ -132,7 +134,9 @@ def test_noise_and_solution_errors(config):
     np.testing.assert_allclose(l2["surface_albedo_noise_error"], [0.01, 0.03])
     np.testing.assert_allclose(l2["surface_albedo_solution_error"], [0.02, 0.06])
     np.testing.assert_allclose(l2["aerosol_median_radius"], [70.0, 80.0, 90.0])
-    np.testing.assert_allclose(l2["aerosol_extinction_averaging_kernel"], 0.5 * np.eye(3))
+    np.testing.assert_allclose(
+        l2["aerosol_extinction_averaging_kernel"], 0.5 * np.eye(3)
+    )
     np.testing.assert_array_equal(l2["albedo_wavelength"], ALBEDO_WAVELENGTHS)
 
 
