@@ -18,7 +18,7 @@ def _locations(issues):
     return {issue.location for issue in _errors(issues)}
 
 
-@pytest.mark.parametrize("product", ["l1a", "l1b", "cal_db"])
+@pytest.mark.parametrize("product", ["l1a", "l1b", "cal_db", "l2"])
 def test_valid_dataset_has_no_issues(product, request):
     assert validate(request.getfixturevalue(product), product) == []
 
@@ -115,11 +115,7 @@ def test_attribute_not_in_allowed_values(l1b):
 
 @pytest.fixture
 def l1b_with_conditional_attribute(monkeypatch):
-    """The L1B schema plus an attribute required only for one noise model.
-
-    No schema uses required_when yet, so the validator's support for it is tested
-    on a patched copy.
-    """
+    """The L1B schema plus an attribute required only for one noise model."""
     schema = copy.deepcopy(schemas.load_schema("l1b"))
     schema["attributes"]["detector_noise_source"] = {
         "dtype": "str",
@@ -154,7 +150,7 @@ def test_check_passes_with_only_warnings(l1a):
     check(l1a, "l1a")
 
 
-@pytest.mark.parametrize("product", ["l1a", "l1b", "cal_db"])
+@pytest.mark.parametrize("product", ["l1a", "l1b", "cal_db", "l2"])
 def test_dataset_still_valid_after_netcdf_round_trip(product, request, tmp_path):
     path = tmp_path / f"{product}.nc"
     request.getfixturevalue(product).to_netcdf(path)
@@ -195,3 +191,13 @@ def test_tree_still_valid_after_netcdf_round_trip(l1a, l1a_simulation, tmp_path)
     _tree(l1a, simulation=l1a_simulation).to_netcdf(path)
     with xr.open_datatree(path) as tree:
         assert validate(tree, "l1a") == []
+
+
+def test_l2_two_stage_fields_are_required_only_for_two_stages(l2):
+    single = l2.drop_vars(["aerosol_extinction_stage1", "cloud_top_altitude"])
+    assert _locations(validate(single, "l2")) == {
+        "variables.aerosol_extinction_stage1",
+        "variables.cloud_top_altitude",
+    }
+    single.attrs["retrieval_stages"] = 1
+    assert validate(single, "l2") == []

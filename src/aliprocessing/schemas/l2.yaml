@@ -1,0 +1,498 @@
+product: L2
+schema_version: 0.1.0
+status: draft
+description: >
+  Retrieved stratospheric aerosol extinction and median radius profiles, one per
+  observation set and across-track bin of an L1B granule, with their
+  uncertainties and averaging kernels, the effective surface albedo, the cloud
+  top found by the two-stage retrieval, and retrieval diagnostics.
+
+model:
+  retrieval: |
+    Each profile is a regularized least-squares (optimal-estimation style) fit of
+    the SASKTRAN2 forward model, at each channel's centre wavelength, to the L1B
+    radiance and dolp of one observation set and across-track bin, over the
+    tangent altitudes from lower_altitude_limit to upper_altitude_limit. The
+    state x holds the aerosol extinction and median radius profiles on
+    `altitude`, an O3 profile held near its prior (not stored), and the
+    Lambertian surface albedo at each channel. With the Jacobian K, the
+    measurement noise covariance S_ε (diagonal, from radiance_noise and
+    dolp_noise), and the regularization precision R (Tikhonov smoothing plus a
+    pull towards the prior), at the solution:
+
+      Ŝ = (Kᵀ S_ε⁻¹ K + R)⁻¹               solution covariance
+      G = Ŝ Kᵀ S_ε⁻¹                        gain matrix
+      A = G K                               averaging kernel
+      S_noise = G S_ε Gᵀ                    error covariance from measurement noise
+
+    `*_noise_error` is the square root of the diagonal of S_noise and
+    `*_solution_error` that of Ŝ. Ŝ = S_noise + (A − I) R⁻¹ (A − I)ᵀ is the total
+    of noise and smoothing error only when R⁻¹ is the true covariance of the
+    atmosphere; with an ad hoc regularization, treat it as an indication of the
+    smoothing error rather than its value. Neither includes forward-model or
+    instrument-model errors, nor errors in the program-of-record pressure and
+    temperature.
+
+    Quantities retrieved in log space (see the `*_retrieval_space` attributes)
+    have their errors converted to physical units to first order, σ_x = x · σ_ln x,
+    and their averaging kernels are ∂ ln x̂ / ∂ ln x, a fractional response.
+  stages: |
+    With retrieval_stages = 2, stage 1 fits the configured tangent-altitude
+    window with a capped number of function evaluations. Clouds are then
+    detected on the L1B tangent altitudes from two signatures: a colour
+    signature (the vertical log-radiance gradient of a short channel minus that
+    of a long channel, times stage 1's extinction) and a DoLP signature (the
+    vertical gradient of ln dolp at a long channel). Both are scaled down above
+    the tropopause. The cloud top is the highest cloudy tangent altitude. Stage 2
+    fits from a padding above the cloud top, or from the bottom of the window
+    when no cloud is found, starting from stage 1's aerosol with the prior
+    unchanged. The stored profile is stage 2's.
+
+dimensions:
+  observation_set:
+    description: Observation set of the L1B granule, in the same order.
+  across_track:
+    description: >
+      Across-track bin of the L1B granule, in the same order; across_track_angle
+      gives its centre.
+  altitude:
+    coordinate: true
+    description: Retrieval altitude grid.
+  altitude2:
+    coordinate: true
+    description: >
+      Copy of `altitude` for the second axis of the averaging kernels, the level
+      of the true-state perturbation.
+  albedo_wavelength:
+    coordinate: true
+    description: Wavelengths at which the surface albedo is retrieved.
+
+file:
+  filename_pattern: "HAWC_ALI_Aerosol_L2_{YYYYMMDD}T{HHMM}.v{version}.STD.nc"
+  description: >
+    One file holds the profiles retrieved from one L1B granule, named after it
+    with Radiances_L1B replaced by Aerosol_L2.
+
+attributes:
+  schema_version:
+    dtype: str
+    required: true
+    role: processing
+    description: Version of this schema the granule conforms to.
+
+  retrieval_stages:
+    dtype: int
+    allowed: [1, 2]
+    required: true
+    role: processing
+    description: >
+      1 for a single fit over the configured tangent-altitude window, 2 for the
+      two-stage retrieval with cloud detection (see the model section).
+
+  aerosol_extinction_wavelength:
+    dtype: float
+    units: nm
+    required: true
+    valid_min: 0
+    role: processing
+    description: Wavelength at which aerosol_extinction is given, in nm.
+
+  aerosol_extinction_retrieval_space:
+    dtype: str
+    allowed: [linear, log]
+    required: true
+    role: processing
+    description: >
+      Whether aerosol extinction was retrieved directly or as its logarithm.
+      Determines the meaning of aerosol_extinction_averaging_kernel.
+
+  aerosol_median_radius_retrieval_space:
+    dtype: str
+    allowed: [linear, log]
+    required: false
+    role: processing
+    description: >
+      Whether the median radius was retrieved directly or as its logarithm.
+      Present when aerosol_median_radius is.
+
+variables:
+  # ------------------------------------------------------------------- geometry
+  time:
+    dims: [observation_set]
+    dtype: datetime
+    required: true
+    role: geometry
+    description: >
+      Time of the observation set: the earliest exposure midpoint of its frames.
+
+  altitude:
+    dims: [altitude]
+    dtype: float
+    units: m
+    required: true
+    role: geometry
+    description: >
+      Geometric altitude above the WGS84 ellipsoid, on the same reference as the
+      L1B tangent altitudes.
+
+  altitude2:
+    dims: [altitude2]
+    dtype: float
+    units: m
+    required: true
+    role: geometry
+    description: Equal to `altitude`.
+
+  across_track_angle:
+    dims: [across_track]
+    dtype: float
+    units: degree
+    required: true
+    role: geometry
+    description: >
+      Centre of each across-track bin in pixel_azimuth_angle, from the L1B.
+
+  latitude:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: degrees_north
+    required: true
+    valid_min: -90
+    valid_max: 90
+    role: geometry
+    description: >
+      Reference latitude of the profile: the mean tangent latitude of the image's
+      usable L1B altitudes (finite and unsaturated in every channel).
+
+  longitude:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: degrees_east
+    required: true
+    valid_min: -180
+    valid_max: 180
+    role: geometry
+    description: >
+      Reference longitude of the profile: the mean tangent longitude of the
+      image's usable L1B altitudes, averaged as angles so that it is continuous
+      across the dateline.
+
+  solar_zenith_angle:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: degree
+    required: true
+    valid_min: 0
+    valid_max: 180
+    role: geometry
+    description: >
+      Mean solar zenith angle at the tangent points of the image's usable L1B
+      altitudes.
+
+  scattering_angle:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: degree
+    required: true
+    valid_min: 0
+    valid_max: 180
+    role: geometry
+    description: >
+      Single-scattering angle of sunlight into a horizontal line of sight with
+      solar_zenith_angle and the mean relative solar azimuth angle. 0 is forward
+      scatter.
+
+  # ---------------------------------------------------------- aerosol extinction
+  aerosol_extinction:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: m-1
+    required: true
+    valid_min: 0
+    role: measurement
+    description: >
+      Retrieved stratospheric aerosol extinction at aerosol_extinction_wavelength.
+
+  aerosol_extinction_prior:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: m-1
+    required: true
+    valid_min: 0
+    role: processing
+    description: Prior extinction that the regularization pulls towards.
+
+  aerosol_extinction_noise_error:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: m-1
+    required: true
+    valid_min: 0
+    role: measurement
+    description: >
+      One-sigma error of aerosol_extinction from measurement noise, √diag(S_noise).
+
+  aerosol_extinction_solution_error:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: m-1
+    required: true
+    valid_min: 0
+    role: measurement
+    description: >
+      One-sigma error of aerosol_extinction from the solution covariance,
+      √diag(Ŝ); see the model section for when it is a total error.
+
+  aerosol_extinction_averaging_kernel:
+    dims: [observation_set, across_track, altitude, altitude2]
+    dtype: float
+    units: "1"
+    required: true
+    role: measurement
+    description: >
+      Averaging kernel of aerosol_extinction: element [i, j] is the response of
+      the retrieved value at altitude i to a perturbation of the true state at
+      altitude2 j.
+
+  aerosol_extinction_stage1:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: m-1
+    required_when: {retrieval_stages: 2}
+    valid_min: 0
+    role: quality
+    description: >
+      Stage 1's extinction, before cloud detection. A cloud in the window
+      contaminates it; the difference from aerosol_extinction shows the effect
+      of the cloud screen.
+
+  # ------------------------------------------------------- aerosol median radius
+  aerosol_median_radius:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: nm
+    required: false
+    valid_min: 0
+    role: measurement
+    description: >
+      Retrieved median radius of the aerosol's log-normal size distribution
+      (sulphuric acid, mode width 1.6). Absent when it is not retrieved.
+
+  aerosol_median_radius_prior:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: nm
+    required: false
+    valid_min: 0
+    role: processing
+    description: Prior median radius that the regularization pulls towards.
+
+  aerosol_median_radius_noise_error:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: nm
+    required: false
+    valid_min: 0
+    role: measurement
+    description: One-sigma error of aerosol_median_radius from measurement noise.
+
+  aerosol_median_radius_solution_error:
+    dims: [observation_set, across_track, altitude]
+    dtype: float
+    units: nm
+    required: false
+    valid_min: 0
+    role: measurement
+    description: One-sigma error of aerosol_median_radius from the solution covariance.
+
+  aerosol_median_radius_averaging_kernel:
+    dims: [observation_set, across_track, altitude, altitude2]
+    dtype: float
+    units: "1"
+    required: false
+    role: measurement
+    description: Averaging kernel of aerosol_median_radius, laid out as for extinction.
+
+  # ------------------------------------------------------------ surface albedo
+  albedo_wavelength:
+    dims: [albedo_wavelength]
+    dtype: float
+    units: nm
+    required: false
+    role: processing
+    description: >
+      Wavelengths of surface_albedo; by default the L1B channel centres.
+
+  surface_albedo:
+    dims: [observation_set, across_track, albedo_wavelength]
+    dtype: float
+    units: "1"
+    required: false
+    role: measurement
+    description: >
+      Effective Lambertian surface albedo, retrieved with the aerosol. It also
+      takes up light reflected by clouds and the lower atmosphere, so it is not
+      a measurement of the surface. Absent when it is not retrieved.
+
+  surface_albedo_noise_error:
+    dims: [observation_set, across_track, albedo_wavelength]
+    dtype: float
+    units: "1"
+    required: false
+    valid_min: 0
+    role: measurement
+    description: >
+      One-sigma error of surface_albedo from measurement noise. The albedo has
+      no prior constraint, so where the lines of sight see little reflected light
+      this error is large or unreliable.
+
+  surface_albedo_solution_error:
+    dims: [observation_set, across_track, albedo_wavelength]
+    dtype: float
+    units: "1"
+    required: false
+    valid_min: 0
+    role: measurement
+    description: One-sigma error of surface_albedo from the solution covariance.
+
+  # ---------------------------------------------------------------- ancillary
+  tropopause_altitude:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: m
+    required: false
+    role: processing
+    description: >
+      Tropopause altitude from the program of record, when it gives one. Cloud
+      scores above it are scaled down.
+
+  # --------------------------------------------------------------- diagnostics
+  lower_altitude_limit:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: m
+    required: true
+    role: quality
+    description: >
+      Lowest tangent altitude fitted: with retrieval_stages = 2, stage 2's lower
+      bound, above any cloud; otherwise the bottom of the configured window. The
+      profile below it is constrained only by the regularization.
+
+  upper_altitude_limit:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: m
+    required: true
+    role: quality
+    description: Highest tangent altitude fitted.
+
+  cloud_top_altitude:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: m
+    required_when: {retrieval_stages: 2}
+    role: quality
+    description: >
+      Highest tangent altitude where a cloud was detected; NaN when none was.
+
+  cost:
+    dims: [observation_set, across_track]
+    dtype: float
+    units: "1"
+    required: true
+    valid_min: 0
+    role: quality
+    description: >
+      Final value of the minimized objective, (χ²_measurement + χ²_regularization)
+      divided by the number of measurements. About 1 for a fit consistent with
+      the noise; much larger values indicate a poor fit.
+
+  optimizer_status:
+    dims: [observation_set, across_track]
+    dtype: int
+    units: "1"
+    required: true
+    role: quality
+    description: >
+      Termination status of scipy.optimize.least_squares: 1 to 4 are convergence
+      criteria, 0 is the evaluation limit, -1 is a failure.
+
+  converged:
+    dims: [observation_set, across_track]
+    dtype: bool
+    required: true
+    role: quality
+    description: >
+      True when the optimizer met a convergence criterion (optimizer_status > 0).
+      A profile that stopped at the evaluation limit may still be usable; check
+      cost.
+
+  num_function_evaluations:
+    dims: [observation_set, across_track]
+    dtype: int
+    units: "1"
+    required: true
+    valid_min: 0
+    role: quality
+    description: Forward-model evaluations used by the optimizer in the final stage.
+
+  # ------------------------------------------------------------- quality flags
+  profile_quality_flag:
+    dims: [observation_set, across_track]
+    dtype: int
+    units: "1"
+    required: true
+    valid_min: 0
+    role: quality
+    open_questions: [quality-flag]
+    description: >
+      Placeholder for a quality flag of the whole profile. Always 0, not
+      assessed; other values are reserved until the flag is defined.
+
+  aerosol_extinction_quality_flag:
+    dims: [observation_set, across_track, altitude]
+    dtype: int
+    units: "1"
+    required: true
+    valid_min: 0
+    role: quality
+    open_questions: [quality-flag]
+    description: >
+      Placeholder for a quality flag of each altitude of aerosol_extinction.
+      Always 0, not assessed; other values are reserved until the flag is defined.
+
+constraints:
+  - id: time-increasing
+    rule: time is strictly increasing within a granule.
+  - id: grid-increasing
+    rule: altitude and across_track_angle are strictly increasing.
+  - id: kernel-grid
+    rule: altitude2 equals altitude.
+  - id: median-radius-complete
+    rule: >
+      If any aerosol_median_radius variable is present, then
+      aerosol_median_radius, its prior, both errors, its averaging kernel and
+      aerosol_median_radius_retrieval_space are all present.
+  - id: albedo-complete
+    rule: >
+      If any surface_albedo variable is present, then surface_albedo, both of its
+      errors and albedo_wavelength are all present.
+  - id: finite-values
+    rule: >
+      aerosol_extinction, both of its errors, latitude and longitude are finite
+      everywhere.
+
+open_questions:
+  - id: quality-flag
+    question: >
+      Which profiles, and which altitudes of a profile, should users treat as
+      good, and should L2 carry a quality flag for it?
+    context: >
+      Candidates are cost, converged, the averaging-kernel row sum (measurement
+      response) at each altitude, altitudes below lower_altitude_limit or near
+      cloud_top_altitude, and how far aerosol_extinction_stage1 differs from
+      aerosol_extinction. The thresholds need validation against simulations and
+      coincident measurements before the flags are defined. Until then
+      profile_quality_flag and aerosol_extinction_quality_flag are placeholders,
+      always 0 (not assessed), and the diagnostics are stored for users to
+      filter on.
