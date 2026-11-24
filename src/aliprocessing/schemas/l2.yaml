@@ -415,7 +415,8 @@ variables:
     role: quality
     description: >
       Termination status of scipy.optimize.least_squares: 1 to 4 are convergence
-      criteria, 0 is the evaluation limit, -1 is a failure.
+      criteria, 0 is the evaluation limit, -1 is a failure. -2 when
+      retrieval_failed is true.
 
   converged:
     dims: [observation_set, across_track]
@@ -435,6 +436,19 @@ variables:
     valid_min: 0
     role: quality
     description: Forward-model evaluations used by the optimizer in the final stage.
+
+  retrieval_failed:
+    dims: [observation_set, across_track]
+    dtype: bool
+    required: true
+    role: quality
+    description: >
+      True when the retrieval of the image raised an error, for example when a
+      cloud top left no tangent altitudes to fit. The profile is then a fill:
+      its float variables are NaN, except latitude and longitude when the image
+      had usable L1B altitudes and tropopause_altitude when the program of
+      record gives one; optimizer_status is -2, converged is false and
+      num_function_evaluations is 0.
 
   # ------------------------------------------------------------- quality flags
   profile_quality_flag:
@@ -480,7 +494,7 @@ constraints:
   - id: finite-values
     rule: >
       aerosol_extinction, both of its errors, latitude and longitude are finite
-      everywhere.
+      in every profile where retrieval_failed is false.
 
 open_questions:
   - id: quality-flag

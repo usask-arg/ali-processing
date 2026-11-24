@@ -278,6 +278,7 @@ def l2() -> xr.Dataset:
         "cost": per_profile(1.1, "1"),
         "optimizer_status": per_profile(2, "1", dtype=np.int64),
         "converged": _var(grid_dims, np.ones(grid_shape, dtype=bool)),
+        "retrieval_failed": _var(grid_dims, np.zeros(grid_shape, dtype=bool)),
         "num_function_evaluations": per_profile(7, "1", dtype=np.int64),
         "profile_quality_flag": per_profile(0, "1", dtype=np.int64),
         "aerosol_extinction_quality_flag": _var(

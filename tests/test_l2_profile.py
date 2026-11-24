@@ -6,8 +6,17 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from aliprocessing.forward_model import simulate_l1a
+from aliprocessing.l1b.data import L1bImage
 from aliprocessing.l2.config import load_retrieval_config
-from aliprocessing.processing.l1b_to_l2 import l2_granule, l2_profile
+from aliprocessing.processing import l1b_to_l2
+from aliprocessing.processing.l1a_to_l1b import process_l1a_to_l1b
+from aliprocessing.processing.l1b_to_l2 import (
+    failed_l2_profile,
+    l2_granule,
+    l2_profile,
+    process_l1b_to_l2,
+)
 from aliprocessing.schemas import validate
 
 ALTITUDE = np.array([5e3, 10e3, 15e3])
@@ -243,3 +252,110 @@ def test_bins_of_one_observation_set_must_share_its_time(config):
 def test_empty_granule_is_rejected():
     with pytest.raises(ValueError, match="at least one profile"):
         l2_granule([], [])
+
+
+def test_failed_profile_is_a_fill(config):
+    profiles = [
+        [l2_profile(_state(observation_set=i), config) for _ in range(2)]
+        for i in range(2)
+    ]
+    time = START + np.timedelta64(3, "s")
+    por_image = xr.Dataset({"tropopause_altitude": 12e3})
+    profiles[1][0] = failed_l2_profile(profiles[0][0], time, por_image=por_image)
+    l2 = l2_granule(profiles, [-1.0, 1.0])
+
+    assert validate(l2, "l2") == []
+    np.testing.assert_array_equal(
+        l2["retrieval_failed"], [[False, False], [True, False]]
+    )
+    failed = l2.isel(observation_set=1, across_track=0)
+    assert np.all(np.isnan(failed["aerosol_extinction"]))
+    assert np.all(np.isnan(failed["aerosol_median_radius_averaging_kernel"]))
+    assert np.isnan(failed["latitude"])
+    assert float(failed["tropopause_altitude"]) == 12e3
+    assert int(failed["optimizer_status"]) == -2
+    assert not bool(failed["converged"])
+    assert int(failed["num_function_evaluations"]) == 0
+    np.testing.assert_array_equal(l2["time"], [START, time])
+    # The other profiles are left as retrieved
+    np.testing.assert_allclose(
+        l2["aerosol_extinction"].isel(observation_set=1, across_track=1),
+        [1e-6, 2e-6, 3e-6],
+    )
+
+
+@pytest.fixture
+def l1b(small_cal_db, limb_scene, make_frames):
+    l1a = simulate_l1a(small_cal_db, limb_scene, make_frames(num_sets=2), noise=False)
+    return process_l1a_to_l1b(l1a, small_cal_db).isel(across_track=[1, 2])
+
+
+@pytest.fixture
+def por():
+    altitude = np.arange(0.0, 65001.0, 1000.0)
+    return xr.Dataset(
+        {
+            "pressure": ("altitude", 101325.0 * np.exp(-altitude / 7000.0)),
+            "temperature": ("altitude", np.full(len(altitude), 250.0)),
+        },
+        coords={"altitude": altitude},
+    )
+
+
+def _fake_retrieval(fail):
+    """process_l1b_to_l2_image giving _state, raising for images where ``fail``."""
+
+    def retrieve(image, _por_image, _cal_db, _config):
+        if fail(image):
+            msg = "the cloud top leaves no altitudes to fit"
+            raise ValueError(msg)
+        return _state().assign(
+            time=image.spectra["I"].ds["time"],
+            latitude=float(image.reference_latitude()["I"]),
+            longitude=float(image.reference_longitude()["I"]),
+        )
+
+    return retrieve
+
+
+def test_granule_keeps_the_images_that_did_not_fail(
+    monkeypatch, l1b, por, small_cal_db
+):
+    failing = L1bImage.from_l1b(l1b, 0, 1)
+    latitude = float(failing.reference_latitude()["I"])
+    monkeypatch.setattr(
+        l1b_to_l2,
+        "process_l1b_to_l2_image",
+        _fake_retrieval(
+            lambda image: (
+                image.reference_latitude()["I"] == latitude
+                and image.spectra["I"].ds["time"] == failing.spectra["I"].ds["time"]
+            )
+        ),
+    )
+
+    with pytest.warns(UserWarning, match="observation set 0, across-track bin 1"):
+        l2 = process_l1b_to_l2(l1b, por, small_cal_db)
+
+    assert validate(l2, "l2") == []
+    np.testing.assert_array_equal(
+        l2["retrieval_failed"], [[False, True], [False, False]]
+    )
+    np.testing.assert_array_equal(l2["time"], l1b["time"].min("wavelength"))
+    failed = l2.isel(observation_set=0, across_track=1)
+    np.testing.assert_allclose(failed["latitude"], latitude)
+    np.testing.assert_allclose(failed["longitude"], failing.reference_longitude()["I"])
+    assert np.all(np.isnan(failed["aerosol_extinction"]))
+    assert np.all(np.isfinite(l2["aerosol_extinction"].isel(across_track=0)))
+
+
+def test_granule_raises_when_every_image_fails(monkeypatch, l1b, por, small_cal_db):
+    monkeypatch.setattr(
+        l1b_to_l2, "process_l1b_to_l2_image", _fake_retrieval(lambda _: True)
+    )
+    with (
+        pytest.warns(UserWarning, match="failed"),
+        pytest.raises(RuntimeError, match="every image") as raised,
+    ):
+        process_l1b_to_l2(l1b, por, small_cal_db)
+    assert isinstance(raised.value.__cause__, ValueError)

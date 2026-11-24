@@ -31,7 +31,7 @@ def test_defaults_are_the_previous_settings():
         "include_bounds": True,
         "max_nfev": 200,
         "ftol": 1e-6,
-        "verbose": 2,
+        "verbose": 0,
     }
     # Lowered from 10 km with the two-stage retrieval, as OSIRIS
     assert config["measurement"]["altitude_range_m"] == [5000, 40000]
@@ -42,6 +42,47 @@ def test_defaults_are_the_previous_settings():
     assert config["state"]["absorbers"]["o3"]["tikh_factor"] == 2.5e4
     aerosol = config["state"]["aerosols"]["stratospheric_aerosol"]
     assert aerosol["prior"]["median_radius"] == {"type": "constant", "value": 80}
+    assert aerosol["prior_state"] is None
+    assert "extinction_per_m" not in aerosol["prior"]
+    assert "prior" not in config["state"]["absorbers"]["o3"]
+
+
+@pytest.mark.parametrize(
+    "aerosol_prior",
+    [
+        {"extinction_per_m": {"type": "testing"}},
+        {"median_radius": {"type": "mipas", "value": 80}},
+        {"median_radius": 80},
+    ],
+)
+def test_ignored_aerosol_priors_are_rejected(aerosol_prior):
+    with pytest.raises(ValueError, match="prior"):
+        load_retrieval_config(
+            {"state": {"aerosols": {"stratospheric_aerosol": {"prior": aerosol_prior}}}}
+        )
+
+
+def test_absorber_prior_is_rejected():
+    with pytest.raises(ValueError, match="MIPAS"):
+        load_retrieval_config(
+            {"state": {"absorbers": {"o3": {"prior": {"type": "mipas", "value": 1}}}}}
+        )
+
+
+def test_constant_aerosol_prior_is_accepted():
+    config = load_retrieval_config(
+        {
+            "state": {
+                "aerosols": {
+                    "stratospheric_aerosol": {
+                        "prior": {"median_radius": {"value": 100}}
+                    }
+                }
+            }
+        }
+    )
+    aerosol = config["state"]["aerosols"]["stratospheric_aerosol"]
+    assert aerosol["prior"]["median_radius"] == {"type": "constant", "value": 100}
 
 
 def test_altitude_grid_matches_the_previous_default():

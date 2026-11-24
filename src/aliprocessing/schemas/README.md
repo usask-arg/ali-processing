@@ -21,8 +21,9 @@ match yet.
 ## Instrument summary
 
 The schemas describe a simple model of ALI. One detector frame holds three
-sub-images of the same scene, side by side with gaps between them. Each sub-image
-is seen through a linear polarizer (analyzer) at a different angle, nominally
+sub-images of the same scene, stacked vertically along `detector_row` with rows
+of unused pixels between them. Each sub-image spans every detector column and
+the full altitude range of the field of view. Each sub-image is seen through a linear polarizer (analyzer) at a different angle, nominally
 −60°, 0° and 60°. A filter wheel selects the spectral channel; one frame is taken
 at one wheel position, and the instrument steps through the channels in turn. The
 wheel also has a blank position, where no light reaches the detector. An **observation set** is
