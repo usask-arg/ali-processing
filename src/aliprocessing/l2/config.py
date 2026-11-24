@@ -28,7 +28,8 @@ def load_retrieval_config(overrides: dict | str | os.PathLike | None = None) -> 
 
     ``overrides`` is a dict or a YAML file with the same layout as
     retrieval_config.yaml; a complete configuration also works. Raises ValueError
-    for unknown keys outside the ``state`` and ``ancillary`` sections.
+    for unknown keys outside the ``state`` and ``ancillary`` sections, and for
+    prior settings that skretrieval would ignore.
     """
     text = (
         resources.files(__package__)
@@ -39,6 +40,7 @@ def load_retrieval_config(overrides: dict | str | os.PathLike | None = None) -> 
     if isinstance(overrides, str | os.PathLike):
         overrides = yaml.safe_load(Path(overrides).read_text("utf-8"))
     _merge(config, copy.deepcopy(overrides or {}), path="", free_form=False)
+    _check_priors(config["state"])
     return config
 
 
@@ -63,6 +65,43 @@ def engine_kwargs(config: dict, num_channels: int) -> dict:
     if kwargs.get("num_threads") is None:
         kwargs["num_threads"] = num_channels
     return kwargs
+
+
+def _check_priors(state: dict) -> None:
+    """Reject the prior settings that skretrieval does not read.
+
+    skretrieval's absorbers always take their prior from the MIPAS climatology.
+    An ``extinction_profile`` aerosol takes its extinction prior from
+    ``prior_state``, and reads only ``value`` from each entry of ``prior``, as a
+    constant profile.
+    """
+    for name, absorber in (state.get("absorbers") or {}).items():
+        if "prior" in absorber:
+            msg = (
+                f"state.absorbers.{name}.prior is not used: the prior of an "
+                "absorber is the MIPAS climatology"
+            )
+            raise ValueError(msg)
+    for name, aerosol in (state.get("aerosols") or {}).items():
+        if aerosol.get("type") != "extinction_profile":
+            continue
+        for quantity, prior in (aerosol.get("prior") or {}).items():
+            location = f"state.aerosols.{name}.prior.{quantity}"
+            if quantity == "extinction_per_m":
+                msg = (
+                    f"{location} is not used: set the extinction prior with "
+                    f"state.aerosols.{name}.prior_state"
+                )
+                raise ValueError(msg)
+            if (
+                not isinstance(prior, dict)
+                or prior.get("type", "constant") != "constant"
+                or "value" not in prior
+            ):
+                msg = (
+                    f"{location} must be {{type: constant, value: ...}}, got {prior!r}"
+                )
+                raise ValueError(msg)
 
 
 def _merge(base: dict, overrides: dict, path: str, free_form: bool) -> None:

@@ -12,13 +12,15 @@ dimensions:
     description: Frame within the granule.
   detector_row:
     description: >
-      Detector row of the full frame. Roughly along the vertical field of view;
-      the exact direction of each pixel is `pixel_elevation_angle` and
-      `pixel_azimuth_angle` in the calibration database.
+      Detector row of the full frame, including the gaps between the
+      sub-images, which are stacked along it. Within a sub-image, roughly along
+      the vertical field of view; the exact direction of each pixel is
+      `pixel_elevation_angle` and `pixel_azimuth_angle` in the calibration
+      database.
   detector_column:
     description: >
-      Detector column of the full frame, including the gaps between the
-      sub-images.
+      Detector column of the full frame. Roughly along the horizontal field of
+      view; every sub-image spans all columns.
 
 file:
   description: >

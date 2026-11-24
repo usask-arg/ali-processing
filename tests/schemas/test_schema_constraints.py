@@ -297,6 +297,13 @@ def test_l2_not_finite(l2, name):
     assert _constraint_failures(validate(l2, "l2")) == {"finite-values"}
 
 
+@pytest.mark.parametrize("name", ["aerosol_extinction_solution_error", "longitude"])
+def test_l2_failed_profiles_may_be_nan(l2, name):
+    l2[name][0, 0, ...] = np.nan
+    l2["retrieval_failed"][0, 0] = True
+    assert validate(l2, "l2") == []
+
+
 def test_l2_no_cloud_is_not_an_error(l2):
     assert np.all(np.isnan(l2["cloud_top_altitude"]))
     assert validate(l2, "l2") == []

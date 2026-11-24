@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import os
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -57,6 +58,11 @@ def process_l1b_to_l2(
     -------
     xr.Dataset
         The L2 granule, checked against the L2 schema.
+
+    An image whose retrieval raises an error, for example when a cloud top
+    leaves no altitudes to fit, does not stop the granule: a warning is issued
+    and its profile is stored with ``retrieval_failed`` set (see
+    failed_l2_profile). When every image fails, the first error is raised.
     """
     config = load_retrieval_config(config)
     if not isinstance(cal_db, xr.Dataset):
@@ -64,19 +70,48 @@ def process_l1b_to_l2(
     check(l1b, "l1b", cal_db=cal_db)
 
     profiles = []
+    failures = {}
     for observation_set in range(l1b.sizes["observation_set"]):
         row = []
         for across_track in range(l1b.sizes["across_track"]):
-            image = L1bImage.from_l1b(
-                l1b, observation_set, across_track, **image_kwargs
-            )
             index = {"observation_set": observation_set, "across_track": across_track}
             por_image = por.isel(
                 {dim: i for dim, i in index.items() if dim in por.dims}
             )
-            state = process_l1b_to_l2_image(image, por_image, cal_db, config)
-            row.append(l2_profile(state, config))
+            image = None
+            try:
+                image = L1bImage.from_l1b(
+                    l1b, observation_set, across_track, **image_kwargs
+                )
+                state = process_l1b_to_l2_image(image, por_image, cal_db, config)
+                row.append(l2_profile(state, config))
+            except Exception as error:
+                warnings.warn(
+                    f"The retrieval of observation set {observation_set}, "
+                    f"across-track bin {across_track} failed: {error!r}",
+                    stacklevel=2,
+                )
+                failures[observation_set, across_track] = (error, image, por_image)
+                row.append(None)
         profiles.append(row)
+
+    template = next(
+        (profile for row in profiles for profile in row if profile is not None), None
+    )
+    if template is None:
+        error = next(iter(failures.values()))[0]
+        msg = "The retrieval failed for every image of the granule"
+        raise RuntimeError(msg) from error
+    for (observation_set, across_track), (_, image, por_image) in failures.items():
+        time = (
+            l1b["time"]
+            .isel(observation_set=observation_set)
+            .min("wavelength")
+            .to_numpy()
+        )
+        profiles[observation_set][across_track] = failed_l2_profile(
+            template, time, image, por_image
+        )
     return l2_granule(profiles, l1b["across_track_angle"].to_numpy())
 
 
@@ -137,6 +172,7 @@ def l2_profile(state: xr.Dataset, config: dict) -> xr.Dataset:
         "cost": scalar("cost"),
         "optimizer_status": ((), np.int64(status)),
         "converged": ((), status > 0),
+        "retrieval_failed": ((), False),
         "num_function_evaluations": ((), np.int64(state["num_iterations"])),
         # Placeholders: 0 is "not assessed" until the flags are defined
         "profile_quality_flag": ((), np.int64(0)),
@@ -188,6 +224,43 @@ def l2_profile(state: xr.Dataset, config: dict) -> xr.Dataset:
         data_vars["tropopause_altitude"] = scalar("tropopause_altitude")
 
     return xr.Dataset(data_vars, coords=coords, attrs=attrs)
+
+
+def failed_l2_profile(
+    template: xr.Dataset,
+    time: np.datetime64,
+    image: L1bImage | None = None,
+    por_image: xr.Dataset | None = None,
+) -> xr.Dataset:
+    """The L2 profile of an image whose retrieval failed.
+
+    It has the variables of ``template``, a profile from l2_profile of the same
+    granule, with ``retrieval_failed`` set, ``optimizer_status`` -2,
+    ``converged`` false, no function evaluations and every float variable NaN,
+    except the reference latitude and longitude of ``image`` when it was read
+    and the tropopause altitude of ``por_image`` when it gives one.
+    """
+    profile = template.map(
+        lambda variable: (
+            xr.full_like(variable, np.nan) if variable.dtype.kind == "f" else variable
+        ),
+        keep_attrs=True,
+    )
+    profile = profile.assign_coords(time=time)
+    profile["optimizer_status"] = np.int64(-2)
+    profile["converged"] = False
+    profile["retrieval_failed"] = True
+    profile["num_function_evaluations"] = np.int64(0)
+    if image is not None:
+        profile["latitude"] = float(image.reference_latitude()["I"])
+        profile["longitude"] = float(image.reference_longitude()["I"])
+    if (
+        por_image is not None
+        and "tropopause_altitude" in por_image
+        and "tropopause_altitude" in profile
+    ):
+        profile["tropopause_altitude"] = float(por_image["tropopause_altitude"])
+    return profile
 
 
 def l2_granule(

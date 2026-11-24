@@ -247,6 +247,30 @@ def _kernel_grid(ds, _cal_db):
     return ["altitude2 does not equal altitude"]
 
 
+def _finite_where_retrieved(*names: str) -> Check:
+    """``names`` are finite in every profile where retrieval_failed is false."""
+
+    def check(ds, _cal_db):
+        retrieved = (
+            ~ds["retrieval_failed"].astype(bool)
+            if _has(ds, "retrieval_failed")
+            else True
+        )
+        problems = []
+        for name in names:
+            if not _has(ds, name):
+                continue
+            bad = (~np.isfinite(ds[name]) & retrieved).to_numpy()
+            if np.any(bad):
+                problems.append(
+                    f"{name} has {np.count_nonzero(bad)} non-finite values in "
+                    "retrieved profiles"
+                )
+        return problems
+
+    return check
+
+
 def _complete(name: str, variables: tuple[str, ...], attributes=()) -> Check:
     """All of ``variables`` and ``attributes`` are present, or none of the variables."""
 
@@ -474,7 +498,7 @@ CONSTRAINT_CHECKS: dict[str, dict[str, Check]] = {
                 "albedo_wavelength",
             ),
         ),
-        "finite-values": _all_finite(
+        "finite-values": _finite_where_retrieved(
             "aerosol_extinction",
             "aerosol_extinction_noise_error",
             "aerosol_extinction_solution_error",

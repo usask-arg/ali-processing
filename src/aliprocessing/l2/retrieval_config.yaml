@@ -47,7 +47,7 @@ minimizer:
   include_bounds: true
   max_nfev: 200
   ftol: 1.0e-6
-  verbose: 2
+  verbose: 0                     # least_squares progress output: 0 none, 1 summary, 2 each step
 
 # Two-stage retrieval. Stage 1 retrieves over measurement.altitude_range_m;
 # clouds are found from its result and the L1B; stage 2 fits only from above
@@ -74,16 +74,17 @@ two_stage:
 # Passed to the ancillary (pressure and temperature) as keyword arguments
 ancillary: {}
 
-# skretrieval state_kwargs, without altitude_grid (from altitude_grid_m)
+# skretrieval state_kwargs, without altitude_grid (from altitude_grid_m).
+# load_retrieval_config rejects the prior settings that skretrieval would ignore.
 state:
   absorbers:
+    # The prior is the MIPAS climatology; it cannot be configured
     o3:
       prior_influence: 1.0e+6
       tikh_factor: 2.5e+4
       log_space: false
       min_value: 0
       max_value: 1.0e-1
-      prior: {type: mipas, value: 1.0e-6}
   aerosols:
     stratospheric_aerosol:
       type: extinction_profile
@@ -102,8 +103,11 @@ state:
           tikh_factor: 1.0e+1
           min_value: 10
           max_value: 589.0
+      # Extinction prior on the altitude_grid_m grid [m-1]; null uses the
+      # sasktran2 test aerosol profile (sasktran2.test_util.scenarios)
+      prior_state: null
+      # Priors of the other retrieved quantities, constant with altitude
       prior:
-        extinction_per_m: {type: testing}
         median_radius: {type: constant, value: 80}
   surface:
     lambertian_albedo:
